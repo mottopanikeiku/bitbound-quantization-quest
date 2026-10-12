@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadAdventure, saveAdventure, newAdventure, SAVE_KEY } from '../src/save.js';
+import { loadAdventure, saveAdventure, newAdventure } from '../src/save.js';
 
 test('denied browser storage access does not prevent a session-only adventure', () => {
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
