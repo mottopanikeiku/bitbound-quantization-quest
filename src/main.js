@@ -335,6 +335,13 @@ function capture() {
 function showGuide(id) {
   const entry = GUIDE.find(item => item.id === id) ?? GUIDE[0];
   openDialog('guide', `${dialogHeader('RESEARCH-BACKED FIELD NOTES', 'The Quantization Field Guide')}<div class="dialog-content"><p class="guide-intro">Start with the intuition. Open the equations. Follow the original research.</p><div class="guide-layout"><nav class="guide-nav" aria-label="Field guide topics">${GUIDE.map(item => `<button class="${item.id === entry.id ? 'active' : ''}" data-guide="${esc(item.id)}" ${item.id === entry.id ? 'aria-current="page"' : ''}>${esc(item.title)}</button>`).join('')}</nav><article class="guide-article"><span class="guide-tag">${esc(entry.tag)}</span><h2>${esc(entry.title)}</h2><p class="guide-summary">${esc(entry.summary)}</p>${entry.body.map(paragraph => `<p>${esc(paragraph)}</p>`).join('')}${entry.formula ? `<pre class="formula">${esc(entry.formula)}</pre>` : ''}<h3>Primary sources</h3><ul class="source-list">${entry.sources.map(source => `<li><a href="${esc(source.url)}" target="_blank" rel="noopener noreferrer">${esc(source.label)} ↗</a></li>`).join('')}</ul></article></div><p class="guide-boundary">The island is a teaching model. Successful toy experiments are not evidence that a real LLM meets an accuracy or latency target.</p></div>`);
+  if (encounter) {
+    const back = document.createElement('button');
+    back.className = 'secondary-button';
+    back.dataset.action = 'back-encounter';
+    back.textContent = '← Back to your experiment';
+    document.querySelector('.guide-boundary').after(back);
+  }
 }
 
 function showTeam(id) {
@@ -381,6 +388,8 @@ function onDialogClick(event) {
     const option = control.options[Number(target.dataset.option)];
     if (encounter.result) encounter.previous = { loadout: encounter.lesson.controls.map(c => `${c.label}: ${c.options.find(o => o.value === encounter.config[c.key]).label}`).join(' · '), checks: encounter.result.checks };
     encounter.config[control.key] = option.value;
+    state.loadouts[loadoutKey(encounter.lesson.id, encounter.variant)] = { ...encounter.config };
+    persist();
     encounter.result = null;
     encounter.answer = null;
     audio.play('select');
@@ -411,6 +420,7 @@ function onDialogClick(event) {
     case 'continue': { const finished = target.dataset.finished === 'true'; closeDialog(); if (finished) showEnding(); break; }
     case 'sound': toggleSound(); break;
     case 'intro': showIntro(); break;
+    case 'back-encounter': if (encounter) renderEncounter('[data-action="cast"]'); break;
     case 'reset-question': openDialog('settings', `${dialogHeader('YOUR CURRENT SAVE WILL BE REPLACED', 'Start fresh?')}<div class="dialog-content"><p>This removes your seven-spirit adventure from this browser. It does not change anything on GitHub.</p><div class="ending-actions"><button class="primary-button" data-action="close">Keep my adventure</button><button class="secondary-button danger-button" data-action="reset">Start fresh</button></div></div>`); break;
     case 'reset': closeDialog(); clearTimeout(saveTimer); state = newAdventure(); audio.setEnabled(false); persist(); renderShell(); showIntro(); break;
   }
