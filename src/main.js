@@ -10,6 +10,8 @@ import { drawEncounterScene, SCENE_CAPTIONS } from './scenes.js';
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 const fmt = value => Number.isFinite(value) ? (Math.abs(value) < 0.001 && value !== 0 ? value.toExponential(2) : Number(value.toFixed(4)).toString()) : '—';
 const colors = ['#b6db8c', '#e6bc6a', '#88c6c3', '#b0a7d6', '#e5a070', '#c3a1d3', '#e6bc6a'];
+const chapterLabels = ['Bit depth', 'Zero point', 'Calibration', 'Channels', 'Inference', 'Outliers', 'Deployment'];
+const chapterOutcomes = ['The stepping stones align!', 'The zero bell rings!', 'The weather route clears!', 'Every thread finds its ruler!', 'The forge relays agree!', 'The outlier pulley balances!', 'The precision beacon wakes!'];
 const images = new Map();
 function sprite(kind) {
   if (!images.has(kind)) images.set(kind, spriteDataUrl(kind, 5));
@@ -22,6 +24,7 @@ let dialog;
 let dialogKind = '';
 let encounter = null;
 let returnFocus = null;
+let guideReturn = null;
 let toastTimer;
 let saveTimer;
 let lastNearby = -1;
@@ -72,7 +75,7 @@ function renderShell() {
   dialog.addEventListener('change', event => {
     if (event.target.id === 'signal-choice' && encounter) {
       encounter.signal = Number(event.target.value);
-      renderEncounter('#signal-choice');
+      renderEncounter('#signal-choice', true);
     }
   });
   world = new IslandWorld(document.querySelector('#world'), {
@@ -95,7 +98,7 @@ function regionButtons() {
   return LESSONS.map(lesson => {
     const complete = state.completed.includes(lesson.id);
     const unlocked = lesson.id <= state.completed.length;
-    return `<button class="region-stop ${complete ? 'complete' : lesson.id === chapter() ? 'current' : 'locked'}" data-travel="${lesson.id}" aria-disabled="${!unlocked}" aria-label="${complete ? 'Replay' : unlocked ? 'Visit' : 'Locked:'} ${esc(lesson.place)}${complete ? ', befriended' : ''}"><span class="region-number">${complete ? '✓' : String(lesson.id + 1).padStart(2, '0')}</span><span class="region-name">${esc(lesson.concept)}</span></button>`;
+    return `<button class="region-stop ${complete ? 'complete' : lesson.id === chapter() ? 'current' : 'locked'}" data-travel="${lesson.id}" aria-disabled="${!unlocked}" aria-label="${complete ? 'Replay' : unlocked ? 'Visit' : 'Locked:'} ${esc(lesson.place)}${complete ? ', befriended' : ''}"><span class="region-number">${complete ? '✓' : String(lesson.id + 1).padStart(2, '0')}</span><span class="region-name">${esc(chapterLabels[lesson.id])}</span></button>`;
   }).join('');
 }
 
@@ -141,13 +144,22 @@ function updateNearby(position) {
   }
 }
 
-function openDialog(kind, html) {
+function openDialog(kind, html, preserveScroll = false) {
+  const scroll = preserveScroll ? dialog.querySelector('.dialog-inner')?.scrollTop ?? 0 : 0;
   if (!dialog.open) returnFocus = document.activeElement;
   dialogKind = kind;
   dialog.className = `game-dialog ${kind}-dialog`;
   dialog.innerHTML = `<div class="dialog-inner">${html}</div>`;
   if (!dialog.open) dialog.showModal();
-  dialog.scrollTop = 0;
+  dialog.querySelector('.dialog-inner').scrollTop = scroll;
+}
+
+function focusDialogSection(selector, focusSelector) {
+  const section = dialog.querySelector(selector);
+  const owner = dialog.querySelector('.dialog-inner');
+  const top = owner.scrollTop + section.getBoundingClientRect().top - owner.getBoundingClientRect().top - dialog.querySelector('.dialog-header').offsetHeight - 12;
+  owner.scrollTo({ top, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+  dialog.querySelector(focusSelector).focus({ preventScroll: true });
 }
 
 function dialogHeader(kicker, title, close = true) {
@@ -155,15 +167,18 @@ function dialogHeader(kicker, title, close = true) {
 }
 
 function closeDialog() {
+  if (dialogKind === 'guide' && guideReturn) { returnFromGuide(); return; }
   if (dialogKind === 'intro' && !state.started) { state.started = true; persist(); }
   dialog.close();
   dialogKind = '';
   encounter = null;
-  returnFocus?.focus?.();
+  guideReturn = null;
+  const opener = returnFocus?.isConnected ? returnFocus : document.querySelector('#world');
+  opener?.focus({ preventScroll: true });
 }
 
 function showIntro() {
-  openDialog('intro', `${dialogHeader('AN ORIGINAL PIXEL-ART ADVENTURE', 'Welcome to Bitbound')}<div class="dialog-content"><div class="intro-scene"><canvas id="intro-art" width="480" height="288" aria-label="A traveler and leafy spirit meet in a pixel-art woodland beneath a glowing sky"></canvas></div><p class="eyebrow">SMALL BITS. BIG ADVENTURE.</p><h1 class="intro-title">BITBOUND</h1><p class="intro-lede">An island of tiny tensor spirits is running out of room.<br />Can you make their magic smaller without losing its spark?</p><div class="intro-facts"><span><strong>7</strong> spirits to befriend</span><span><strong>0</strong> math prerequisites</span><span><strong>∞</strong> room to experiment</span></div><button class="primary-button start-button" data-action="start">Start adventure →</button><p class="intro-controls">WASD / arrows to wander · E to interact · tap to visit<br />Your adventure saves here. Sound is off until you choose it.</p><p class="intro-boundary">Real quantization math in a small toy world. Not a GPU benchmark.</p></div>`);
+  openDialog('intro', `${dialogHeader('AN ORIGINAL PIXEL-ART ADVENTURE', 'Welcome to Bitbound')}<div class="dialog-content"><div class="intro-scene"><canvas id="intro-art" width="480" height="288" aria-label="A traveler and leafy spirit meet in a pixel-art woodland beneath a glowing sky"></canvas></div><p class="eyebrow">SMALL BITS. BIG ADVENTURE.</p><h1 class="intro-title">BITBOUND</h1><p class="intro-lede">An island of tiny tensor spirits is running out of room.<br />Can you make their magic smaller without losing its spark?</p><div class="intro-facts"><span><strong>7</strong> spirits to befriend</span><span><strong>0</strong> math prerequisites</span><span><strong>∞</strong> room to experiment</span></div><button class="primary-button start-button" data-action="start">${state.started ? 'Return to adventure' : 'Start adventure'} →</button><p class="intro-controls">WASD / arrows to wander · E to interact · tap to visit<br />Your adventure saves here. Sound is off until you choose it.</p><p class="intro-boundary">Real quantization math in a small toy world. Not a GPU benchmark.</p></div>`);
   drawStoryScene(document.querySelector('#intro-art'));
 }
 
@@ -238,7 +253,8 @@ function openEncounter(id) {
   renderEncounter();
 }
 
-function renderEncounter(focusSelector) {
+function renderEncounter(focusSelector, preserveScroll = false) {
+  const anchorTop = preserveScroll && focusSelector ? dialog.querySelector(focusSelector)?.getBoundingClientRect().top : undefined;
   const { lesson, config, variant, result, answer, hint, previous } = encounter;
   const practice = lesson.variants?.find(item => item.id === variant);
   const preview = result ?? evaluateEncounter(lesson.id, config, variant);
@@ -247,22 +263,27 @@ function renderEncounter(focusSelector) {
   const correct = answer !== null && lesson.question.options[answer]?.correct;
   openDialog('encounter', `${dialogHeader(`${esc(lesson.place)} · CHAPTER ${lesson.id + 1}`, lesson.title)}<div class="dialog-content" style="--biome:${colors[lesson.id]}">
     <div class="encounter-banner"><img class="encounter-sprite" src="${sprite(lesson.sprite)}" alt="${esc(lesson.name)}" /><div class="encounter-title"><span class="type-chip">${esc(lesson.concept)}</span><div class="dialogue-box"><span class="guardian-name">${esc(lesson.name)}</span><p>${esc(result ? result.passed ? lesson.dialogue[1] : result.feedback : lesson.dialogue[0])}</p></div></div></div>
-    <div class="encounter-scene"><canvas id="encounter-art" width="560" height="126" aria-label="${esc(SCENE_CAPTIONS[lesson.id])}"></canvas><p class="scene-caption">${esc(SCENE_CAPTIONS[lesson.id])}</p></div>
-    <div class="mission-goal"><span>${practice ? 'REPLAY CONTRACT' : 'MISSION'}</span><p>${esc(practice?.goal ?? lesson.goal)}</p></div>
+    ${!result ? `<div class="encounter-scene"><canvas id="encounter-art" width="560" height="126" aria-label="${esc(SCENE_CAPTIONS[lesson.id])}"></canvas><p class="scene-caption">${esc(SCENE_CAPTIONS[lesson.id])}</p></div>` : ''}
+    <div class="mission-goal"><span>${practice ? 'REPLAY CONTRACT' : 'MISSION'}</span><p>${esc(practice?.goal ?? lesson.goal)}</p>${lesson.id === 0 ? '<p class="control-help">One byte is eight bits. Rebuilding error (MSE) averages squared differences: lower is closer. Meet both the error limit and the byte budget.</p>' : ''}</div>
     ${state.completed.includes(lesson.id) && lesson.variants?.length ? `<nav class="replay-contracts" aria-label="Choose a practice case"><button class="replay-button ${variant === 'base' ? 'selected' : ''}" data-variant="base" aria-pressed="${variant === 'base'}">Original encounter</button>${lesson.variants.map(item => `<button class="replay-button ${variant === item.id ? 'selected' : ''}" data-variant="${esc(item.id)}" aria-pressed="${variant === item.id}">${esc(item.label)}</button>`).join('')}</nav>` : ''}
     ${practice ? `<p class="case-note">${esc(practice.description)} This is another practice case, not a generalization certificate.</p>` : ''}
-    <div class="encounter-grid"><section class="tuning-panel" aria-label="Choose your quantization loadout"><p class="eyebrow">YOUR LOADOUT</p>${lesson.controls.map(control => `<fieldset class="control-group"><legend>${esc(control.label)}</legend><p class="control-help">${esc(control.help)}</p><div class="option-grid">${control.options.map((option, i) => `<button class="option-button ${config[control.key] === option.value ? 'selected' : ''}" data-control="${esc(control.key)}" data-option="${i}" aria-pressed="${config[control.key] === option.value}"><span>${esc(option.label)}</span><small>${esc(option.detail)}</small></button>`).join('')}</div></fieldset>`).join('')}<button class="primary-button run-button" data-action="cast">Cast Quantize →</button><button class="hint-button" data-action="hint" aria-expanded="${hint}">${hint ? 'Hide field hint' : 'Need a field hint?'}</button>${hint ? `<div class="hint-box">${esc(lesson.hint)}</div>` : ''}<p class="control-help">Experiment as often as you like. Changing a setting clears the old result.</p></section>
-    <section class="experiment-panel" aria-label="Numerical experiment"><div class="experiment-screen"><div class="chart-heading"><h3>${esc(preview.chartLabel)}</h3><span>${result ? 'TESTED LOADOUT' : 'LIVE PREVIEW'}</span></div><div class="chart-legend"><span>□ Original</span><span>■ Reconstructed</span><span class="clipping-key">■ Clipped</span></div><div class="quant-chart"><canvas id="quant-chart" width="560" height="174" aria-label="Original and reconstructed values. Exact values and errors are available in the numerical trace below."></canvas></div>${result ? `<div class="metrics-grid">${result.checks.map(check => `<div class="metric ${check.ok ? 'good' : 'bad'}"><span class="metric-label">${check.ok ? '✓' : '◇'} ${esc(check.label)}</span><strong class="metric-value">${esc(check.value)}</strong><span class="metric-target">Target: ${esc(check.target)}</span></div>`).join('')}</div><div class="result-feedback ${passed ? 'success' : 'retry'}" role="status" aria-live="polite"><h3 id="result-title" tabindex="-1">${passed ? 'The magic holds!' : 'A useful discovery.'}</h3><p>${esc(result.feedback)}</p><p class="result-insight">${esc(result.insight)}</p></div>` : '<div class="empty-experiment"><strong>What happens when you change the loadout?</strong><p>The preview is live. Cast Quantize to test your choices against the mission.</p></div>'}
+    <div class="encounter-grid"><section class="tuning-panel" aria-label="Choose your quantization loadout"><h3 class="eyebrow" id="loadout-title" tabindex="-1">YOUR LOADOUT</h3>${lesson.controls.map(control => `<fieldset class="control-group"><legend>${esc(control.label)}</legend><p class="control-help">${esc(control.help)}</p><div class="option-grid">${control.options.map((option, i) => `<button class="option-button ${config[control.key] === option.value ? 'selected' : ''}" data-control="${esc(control.key)}" data-option="${i}" aria-pressed="${config[control.key] === option.value}"><span>${esc(option.label)}</span><small>${esc(option.detail)}</small></button>`).join('')}</div></fieldset>`).join('')}<button class="primary-button run-button" data-action="cast">Cast Quantize →</button><button class="hint-button" data-action="hint" aria-expanded="${hint}">${hint ? 'Hide field hint' : 'Need a field hint?'}</button>${hint ? `<div class="hint-box">${esc(lesson.hint)}</div>` : ''}<p class="control-help">Experiment as often as you like. Changing a setting clears the old result.</p></section>
+    <section class="experiment-panel" aria-label="Numerical experiment"><div class="experiment-screen"><div class="chart-heading"><h3>${esc(preview.chartLabel)}</h3><span>${result ? 'TESTED LOADOUT' : 'LIVE PREVIEW'}</span></div><div class="chart-legend"><span>□ Original</span><span>■ Reconstructed</span><span class="clipping-key">■ Clipped</span></div><div class="quant-chart"><canvas id="quant-chart" width="560" height="174" aria-label="Original and reconstructed values. Exact values and errors are available in the numerical trace below."></canvas></div>${result ? `<div class="metrics-grid">${result.checks.map(check => `<div class="metric ${check.ok ? 'good' : 'bad'}"><span class="metric-label">${check.ok ? '✓' : '◇'} ${esc(check.label)}</span><strong class="metric-value">${esc(check.value)}</strong><span class="metric-target">Target: ${esc(check.target)}</span></div>`).join('')}</div>` : '<div class="empty-experiment"><strong>What happens when you change the loadout?</strong><p>The preview is live. Cast Quantize to test your choices against the mission.</p></div>'}
     <div class="signal-inspector"><label for="signal-choice">Inspect a signal <select id="signal-choice">${preview.points.map((_, i) => `<option value="${i}" ${encounter.signal === i ? 'selected' : ''}>${i + 1}</option>`).join('')}</select></label><p><strong>${fmt(signal.value)}</strong> original → <strong>${signal.code}</strong> integer code → <strong>${fmt(signal.reconstructed)}</strong> rebuilt <span>(error ${fmt(signal.error)}${signal.clipped ? '; clipped' : ''})</span></p>${lesson.id === 0 ? '<p>A tensor is a pack of numbers. We store short codes, then use a ruler (the scale) to read them back.</p>' : ''}</div>
     <div class="storage-caption">Stored tensor: <strong>${preview.storage.total} B</strong> = ${preview.storage.payload} B payload + ${preview.storage.metadata} B scale/zero-point metadata</div><div class="storage-bar" aria-hidden="true"><span class="storage-segment" style="width:${preview.storage.payload / preview.storage.total * 100}%"></span><span class="storage-segment metadata" style="width:${preview.storage.metadata / preview.storage.total * 100}%"></span></div><p class="control-help">Toy packed format. Not total device memory or a speed measurement.</p>
     ${previous ? `<details class="math-details"><summary>Compare your last cast</summary><p>${esc(previous.loadout)}</p><ul>${previous.checks.map(check => `<li>${esc(check.label)}: ${esc(check.value)} ${check.ok ? '✓' : '◇'}</li>`).join('')}</ul></details>` : ''}
     <details class="math-details"><summary>Open numerical trace & equations</summary><pre>${esc(preview.math)}\n${preview.params.map((p, i) => `Group ${i + 1}: scale=${fmt(p.scale)}, zero=${p.zero}, codes ${p.qmin}…${p.qmax}`).join('\n')}</pre><div class="trace-scroll"><table><caption>Actual quantize/dequantize values</caption><thead><tr><th>Input</th><th>Code</th><th>Rebuilt</th><th>Error</th><th>Group</th></tr></thead><tbody>${preview.points.map(point => `<tr><td>${fmt(point.value)}</td><td>${point.code}</td><td>${fmt(point.reconstructed)}</td><td>${fmt(point.error)}${point.clipped ? ' clipped' : ''}</td><td>${(point.group ?? 0) + 1}</td></tr>`).join('')}</tbody></table></div>${preview.extras?.length ? `<ul class="extras">${preview.extras.map(extra => `<li><strong>${esc(extra.label)}:</strong> ${esc(extra.value)}</li>`).join('')}</ul>` : ''}</details></div></section></div>
-    ${passed ? `<section class="transfer-panel"><p class="eyebrow">ONE LAST FIELD CHECK · APPLY WHAT YOU FOUND</p><h3 class="transfer-title">${esc(lesson.question.prompt)}</h3><div class="answer-grid">${lesson.question.options.map((option, i) => `<button class="answer-button ${answer === i ? 'selected' : ''}" data-answer="${i}" aria-pressed="${answer === i}">${esc(option.label)}</button>`).join('')}</div>${answer !== null ? `<p class="answer-feedback ${correct ? 'success' : 'retry'}" role="status">${correct ? '✓' : '◇'} ${esc(lesson.question.options[answer].explanation)}</p>` : ''}${correct ? `<button class="primary-button capture-button" data-action="capture">${state.completed.includes(lesson.id) ? 'Reaffirm your bond' : `Befriend ${esc(lesson.name)}`} →</button>` : ''}</section>` : ''}
+    ${result ? `<section class="result-feedback ${passed ? 'success' : 'retry'}" role="status" aria-live="polite"><div class="cast-outcome"><img src="${sprite(lesson.sprite)}" alt="" /><div><span class="guardian-name">${esc(lesson.name)}</span><h3 id="result-title" tabindex="-1">${passed ? esc(chapterOutcomes[lesson.id]) : `${esc(lesson.name)} has a new clue.`}</h3></div></div>${passed ? '<button class="primary-button field-step" data-action="field-check">Finish the field check ↓</button>' : '<button class="secondary-button field-step" data-action="adjust-loadout">Adjust your loadout ↑</button>'}<canvas id="encounter-art" class="outcome-scene" width="560" height="126" aria-label="${esc(SCENE_CAPTIONS[lesson.id])}"></canvas><p>${esc(result.feedback)}</p><p class="result-insight">${esc(result.insight)}</p></section>` : ''}
+    ${passed ? `<section class="transfer-panel"><p class="eyebrow">ONE LAST FIELD CHECK · APPLY WHAT YOU FOUND</p><h3 class="transfer-title" tabindex="-1">${esc(lesson.question.prompt)}</h3><div class="answer-grid">${lesson.question.options.map((option, i) => `<button class="answer-button ${answer === i ? 'selected' : ''}" data-answer="${i}" aria-pressed="${answer === i}">${esc(option.label)}</button>`).join('')}</div>${answer !== null ? `<p class="answer-feedback ${correct ? 'success' : 'retry'}" role="status" tabindex="-1">${correct ? '✓' : '◇'} ${esc(lesson.question.options[answer].explanation)}</p>${!correct ? '<button class="secondary-button" data-action="field-check">Try another answer ↑</button>' : ''}` : ''}${correct ? `<button class="primary-button capture-button" data-action="capture">${state.completed.includes(lesson.id) ? 'Reaffirm your bond' : `Befriend ${esc(lesson.name)}`} →</button>` : ''}</section>` : ''}
     <div class="encounter-footnote"><span>${state.completed.includes(lesson.id) ? 'REPLAY · EXPERIMENT WITH A DIFFERENT LOADOUT' : 'NO TIMER · EVERY EXPERIMENT IS A CLUE'}</span><button class="research-link" data-guide="${esc(lesson.sourceIds[0])}">Read the field notes ↗</button></div>
-    </div>`);
+    </div>`, preserveScroll);
   drawQuantizationChart(document.querySelector('#quant-chart'), preview);
   drawEncounterScene(document.querySelector('#encounter-art'), lesson, preview, config, Boolean(result));
-  if (focusSelector) document.querySelector(focusSelector)?.focus();
+  const target = focusSelector ? dialog.querySelector(focusSelector) : null;
+  if (target) {
+    if (anchorTop !== undefined) dialog.querySelector('.dialog-inner').scrollTop += target.getBoundingClientRect().top - anchorTop;
+    target.focus({ preventScroll: preserveScroll });
+  }
 }
 
 function drawQuantizationChart(canvas, result) {
@@ -313,7 +334,8 @@ function cast() {
   state.loadouts[loadoutKey(encounter.lesson.id, encounter.variant)] = { ...encounter.config };
   persist();
   audio.play(encounter.result.passed ? 'win' : 'retry');
-  renderEncounter('#result-title');
+  renderEncounter();
+  focusDialogSection('.result-feedback', '#result-title');
 }
 
 function capture() {
@@ -329,19 +351,44 @@ function capture() {
   persist();
   refreshProgress();
   audio.play('capture');
-  openDialog('capture', `${dialogHeader(first ? 'A NEW FRIEND JOINS YOUR JOURNEY' : 'YOUR BOND GROWS STRONGER', `${lesson.name} joined your team!`)}<div class="dialog-content capture-screen" style="--biome:${colors[lesson.id]}"><div class="capture-art"><div class="capture-rays"></div><img src="${sprite(lesson.sprite)}" alt="${esc(lesson.name)}, your new companion" /></div><h2 class="capture-title">${esc(lesson.name)} + you</h2><span class="reward-badge">${esc(lesson.concept)} BADGE</span><p class="takeaway">${esc(lesson.takeaway)}</p><p>${first ? lesson.id === 6 ? 'Every spirit is safe. The Tensor Isles have their spark back.' : `A new path opens: ${esc(LESSONS[lesson.id + 1].place)}.` : 'There is always another loadout to explore.'}</p><button class="primary-button continue-button" data-action="continue" data-finished="${lesson.id === 6 && state.completed.length === 7}">${lesson.id === 6 && state.completed.length === 7 ? 'See the island restored' : 'Back to the adventure'} →</button><button class="research-link" data-guide="${esc(lesson.sourceIds[0])}">Keep the field note ↗</button></div>`);
+  openDialog('capture', `${dialogHeader(first ? 'A NEW FRIEND JOINS YOUR JOURNEY' : 'YOUR BOND GROWS STRONGER', first ? `${lesson.name} joined your team!` : `${lesson.name}, a bond reaffirmed!`)}<div class="dialog-content capture-screen" style="--biome:${colors[lesson.id]}"><div class="capture-art"><div class="capture-rays"></div><img src="${sprite(lesson.sprite)}" alt="${esc(lesson.name)}, ${first ? 'your new companion' : 'your trusted companion'}" /></div><h2 class="capture-title">${esc(lesson.name)} + you</h2><span class="reward-badge">${esc(lesson.concept)} BADGE</span><p class="takeaway">${esc(lesson.takeaway)}</p><p>${first ? lesson.id === 6 ? 'Every spirit is safe. The Tensor Isles have their spark back.' : `A new path opens: ${esc(LESSONS[lesson.id + 1].place)}.` : 'There is always another loadout to explore.'}</p><button class="primary-button continue-button" data-action="continue" data-finished="${lesson.id === 6 && state.completed.length === 7}">${lesson.id === 6 && state.completed.length === 7 ? 'See the island restored' : 'Back to the adventure'} →</button><button class="research-link" data-guide="${esc(lesson.sourceIds[0])}">Keep the field note ↗</button></div>`);
 }
 
 function showGuide(id) {
   const entry = GUIDE.find(item => item.id === id) ?? GUIDE[0];
-  openDialog('guide', `${dialogHeader('RESEARCH-BACKED FIELD NOTES', 'The Quantization Field Guide')}<div class="dialog-content"><p class="guide-intro">Start with the intuition. Open the equations. Follow the original research.</p><div class="guide-layout"><nav class="guide-nav" aria-label="Field guide topics">${GUIDE.map(item => `<button class="${item.id === entry.id ? 'active' : ''}" data-guide="${esc(item.id)}" ${item.id === entry.id ? 'aria-current="page"' : ''}>${esc(item.title)}</button>`).join('')}</nav><article class="guide-article"><span class="guide-tag">${esc(entry.tag)}</span><h2>${esc(entry.title)}</h2><p class="guide-summary">${esc(entry.summary)}</p>${entry.body.map(paragraph => `<p>${esc(paragraph)}</p>`).join('')}${entry.formula ? `<pre class="formula">${esc(entry.formula)}</pre>` : ''}<h3>Primary sources</h3><ul class="source-list">${entry.sources.map(source => `<li><a href="${esc(source.url)}" target="_blank" rel="noopener noreferrer">${esc(source.label)} ↗</a></li>`).join('')}</ul></article></div><p class="guide-boundary">The island is a teaching model. Successful toy experiments are not evidence that a real LLM meets an accuracy or latency target.</p></div>`);
-  if (encounter) {
+  const changingTopic = dialog.open && dialogKind === 'guide';
+  const navScroll = changingTopic ? dialog.querySelector('.guide-nav').scrollTop : 0;
+  if (!changingTopic) guideReturn = dialog.open ? {
+    kind: dialogKind,
+    html: dialog.querySelector('.dialog-inner').innerHTML,
+    scroll: dialog.querySelector('.dialog-inner').scrollTop,
+    topic: entry.id,
+  } : null;
+  openDialog('guide', `${dialogHeader('RESEARCH-BACKED FIELD NOTES', 'The Quantization Field Guide')}<div class="dialog-content"><p class="guide-intro">Start with the intuition. Open the equations. Follow the original research.</p><div class="guide-layout"><nav class="guide-nav" aria-label="Field guide topics">${GUIDE.map(item => `<button class="${item.id === entry.id ? 'active' : ''}" data-guide="${esc(item.id)}" ${item.id === entry.id ? 'aria-current="page"' : ''}>${esc(item.title)}</button>`).join('')}</nav><article class="guide-article"><span class="guide-tag">${esc(entry.tag)}</span><h2>${esc(entry.title)}</h2><p class="guide-summary">${esc(entry.summary)}</p>${entry.body.map(paragraph => `<p>${esc(paragraph)}</p>`).join('')}${entry.formula ? `<pre class="formula">${esc(entry.formula)}</pre>` : ''}<h3>Primary sources</h3><ul class="source-list">${entry.sources.map(source => `<li><a href="${esc(source.url)}" target="_blank" rel="noopener noreferrer">${esc(source.label)} ↗</a></li>`).join('')}</ul></article></div><p class="guide-boundary">The island is a teaching model. Successful toy experiments are not evidence that a real LLM meets an accuracy or latency target.</p></div>`, changingTopic);
+  if (guideReturn) {
     const back = document.createElement('button');
-    back.className = 'secondary-button';
-    back.dataset.action = 'back-encounter';
-    back.textContent = '← Back to your experiment';
-    document.querySelector('.guide-boundary').after(back);
+    back.className = 'secondary-button guide-back';
+    back.dataset.action = 'guide-back';
+    const destination = { encounter: 'your experiment', collection: 'your journal', ending: 'your ending', capture: 'your companion' };
+    back.textContent = `← Back to ${destination[guideReturn.kind] ?? 'the adventure'}`;
+    document.querySelector('.guide-intro').after(back);
   }
+  dialog.querySelector('.guide-nav').scrollTop = navScroll;
+  dialog.querySelector('.guide-nav [aria-current="page"]').focus({ preventScroll: true });
+}
+
+function returnFromGuide() {
+  const previous = guideReturn;
+  if (!previous) return;
+  guideReturn = null;
+  openDialog(previous.kind, previous.html);
+  if (previous.kind === 'encounter' && encounter) {
+    const preview = encounter.result ?? evaluateEncounter(encounter.lesson.id, encounter.config, encounter.variant);
+    drawQuantizationChart(dialog.querySelector('#quant-chart'), preview);
+    drawEncounterScene(dialog.querySelector('#encounter-art'), encounter.lesson, preview, encounter.config, Boolean(encounter.result));
+  } else if (previous.kind === 'ending') drawStoryScene(dialog.querySelector('#ending-art'), true);
+  dialog.querySelector('.dialog-inner').scrollTop = previous.scroll;
+  dialog.querySelector(`[data-guide="${previous.topic}"]`)?.focus({ preventScroll: true });
 }
 
 function showTeam(id) {
@@ -353,7 +400,7 @@ function showTeam(id) {
 
 function showEnding() {
   if (state.completed.length !== 7) return;
-  openDialog('ending', `${dialogHeader('THE TENSOR ISLES ARE RESTORED', 'A precision ranger, at last.')}<div class="dialog-content"><div class="ending-scene"><canvas id="ending-art" width="480" height="288" aria-label="All seven original spirits gather on a restored island"></canvas></div><h2 class="ending-title">Small bits.<br />A brighter world.</h2><p>You did not save the island by choosing the smallest number.<br />You learned <strong>where precision matters.</strong></p><div class="ending-stats"><span><strong>7</strong> spirits befriended</span><span><strong>${state.experiments.reduce((a, b) => a + b, 0)}</strong> experiments explored</span><span><strong>1</strong> precision ranger</span></div><div class="ending-creatures">${LESSONS.map(l => `<img src="${sprite(l.sprite)}" alt="${esc(l.name)}" />`).join('')}</div><p class="ending-note">Your real-world quest: compare model quality on held-out tasks, account for weights + activations + KV cache, and measure latency on your target device. A toy-world win is a beginning, not a deployment certificate.</p><div class="ending-actions"><button class="primary-button" data-action="close">Keep exploring →</button><button class="secondary-button" data-guide="deployment">Plan a real deployment</button></div></div>`);
+  openDialog('ending', `${dialogHeader('THE TENSOR ISLES ARE RESTORED', 'A precision ranger, at last.')}<div class="dialog-content"><div class="ending-scene"><canvas id="ending-art" width="480" height="288" aria-label="All seven original spirits gather on a restored island"></canvas></div><h2 class="ending-title">Small bits.<br />A brighter world.</h2><p>You did not save the island by choosing the smallest number.<br />You explored <strong>where precision matters.</strong></p><div class="ending-stats"><span><strong>7</strong> spirits befriended</span><span><strong>${state.experiments.reduce((a, b) => a + b, 0)}</strong> experiments explored</span><span><strong>1</strong> precision ranger</span></div><div class="ending-creatures">${LESSONS.map(l => `<img src="${sprite(l.sprite)}" alt="${esc(l.name)}" />`).join('')}</div><p class="ending-note">Your real-world quest: compare model quality on held-out tasks, account for weights + activations + KV cache, and measure latency on your target device. A toy-world win is a beginning, not a deployment certificate.</p><div class="ending-actions"><button class="primary-button" data-action="close">Keep exploring →</button><button class="secondary-button" data-guide="deployment">Plan a real deployment</button></div></div>`);
   drawStoryScene(document.querySelector('#ending-art'), true);
 }
 
@@ -380,7 +427,7 @@ function onDialogClick(event) {
     encounter.answer = null;
     encounter.previous = null;
     encounter.signal = 0;
-    renderEncounter(`[data-variant="${variant}"]`);
+    renderEncounter(`[data-variant="${variant}"]`, true);
     return;
   }
   if (target.dataset.control) {
@@ -393,14 +440,14 @@ function onDialogClick(event) {
     encounter.result = null;
     encounter.answer = null;
     audio.play('select');
-    renderEncounter(`[data-control="${control.key}"][data-option="${target.dataset.option}"]`);
+    renderEncounter(`[data-control="${control.key}"][data-option="${target.dataset.option}"]`, true);
     return;
   }
   if (target.dataset.answer !== undefined) {
     encounter.answer = Number(target.dataset.answer);
-    const index = encounter.answer;
-    audio.play(encounter.lesson.question.options[index].correct ? 'select' : 'retry');
-    renderEncounter(`[data-answer="${index}"]`);
+    audio.play(encounter.lesson.question.options[encounter.answer].correct ? 'select' : 'retry');
+    renderEncounter();
+    focusDialogSection('.answer-feedback', '.answer-feedback');
     return;
   }
   if (target.dataset.guide) { showGuide(target.dataset.guide); return; }
@@ -413,14 +460,16 @@ function onDialogClick(event) {
   }
   switch (target.dataset.action) {
     case 'close': closeDialog(); break;
-    case 'start': state.started = true; persist(); closeDialog(); document.querySelector('#world').focus(); toast('Welcome, traveler. Meet Nib in the meadow, or follow the golden beacon.'); break;
+    case 'start': state.started = true; persist(); closeDialog(); document.querySelector('#world').focus(); toast(state.completed.length === 7 ? 'Your island is restored. Revisit a spirit or try a replay contract.' : state.completed.length ? `Welcome back. ${LESSONS[state.completed.length].name} is waiting along the next path.` : 'Welcome, traveler. Meet Nib in the meadow, or follow the golden beacon.'); break;
     case 'cast': cast(); break;
-    case 'hint': encounter.hint = !encounter.hint; renderEncounter('[data-action="hint"]'); break;
+    case 'hint': encounter.hint = !encounter.hint; renderEncounter('[data-action="hint"]', true); break;
+    case 'field-check': focusDialogSection('.transfer-panel', '.transfer-title'); break;
+    case 'adjust-loadout': focusDialogSection('.tuning-panel', '#loadout-title'); break;
     case 'capture': capture(); break;
     case 'continue': { const finished = target.dataset.finished === 'true'; closeDialog(); if (finished) showEnding(); break; }
     case 'sound': toggleSound(); break;
     case 'intro': showIntro(); break;
-    case 'back-encounter': if (encounter) renderEncounter('[data-action="cast"]'); break;
+    case 'guide-back': returnFromGuide(); break;
     case 'reset-question': openDialog('settings', `${dialogHeader('YOUR CURRENT SAVE WILL BE REPLACED', 'Start fresh?')}<div class="dialog-content"><p>This removes your seven-spirit adventure from this browser. It does not change anything on GitHub.</p><div class="ending-actions"><button class="primary-button" data-action="close">Keep my adventure</button><button class="secondary-button danger-button" data-action="reset">Start fresh</button></div></div>`); break;
     case 'reset': closeDialog(); clearTimeout(saveTimer); state = newAdventure(); audio.setEnabled(false); persist(); renderShell(); showIntro(); break;
   }
