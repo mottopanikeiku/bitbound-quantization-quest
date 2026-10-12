@@ -4,8 +4,9 @@ export function newAdventure() {
   return { version: 1, started: false, completed: [], experiments: Array(7).fill(0), loadouts: {}, position: null, sound: false };
 }
 
-export function loadAdventure(storage = globalThis.localStorage) {
+export function loadAdventure(storage) {
   try {
+    storage ??= globalThis.localStorage;
     const saved = JSON.parse(storage.getItem(SAVE_KEY));
     if (!saved || saved.version !== 1) return newAdventure();
     const completed = [];
@@ -20,8 +21,9 @@ export function loadAdventure(storage = globalThis.localStorage) {
   }
 }
 
-export function saveAdventure(state, storage = globalThis.localStorage) {
+export function saveAdventure(state, storage) {
   try {
+    storage ??= globalThis.localStorage;
     storage.setItem(SAVE_KEY, JSON.stringify(state));
     return true;
   } catch {

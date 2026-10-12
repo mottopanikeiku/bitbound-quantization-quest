@@ -47,7 +47,7 @@ test('per-channel scales preserve a small channel and account for metadata', () 
 });
 
 test('toy inference can change the winning class despite weight compression', () => {
-  const result = toyInference([[1, 0.2], [0.1, 0.8]], [[0.7, 0.8]], { weightBits: 2, activationBits: 32 });
+  const result = toyInference([[1, 0.2], [0.1, 0.8]], [[0.6, 0.8]], { weightBits: 2, activationBits: 32 });
   assert.equal(result.predictions[0].reference, 0);
   assert.equal(result.predictions[0].actual, 1);
   assert.equal(result.agreement, 0);
