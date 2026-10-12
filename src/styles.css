@@ -813,7 +813,7 @@ img.encounter-sprite {
   padding: 11px 12px;
   background: rgb(8 18 15 / 35%);
   color: #eedeb9;
-  font-size: 11px;
+  font-size: 14px;
   line-height: 1.75;
 }
 
@@ -1303,7 +1303,7 @@ button.research-link {
   padding: 9px 12px;
   background: var(--panel-raised);
   color: #c4d4b8;
-  font-size: 9px;
+  font-size: 14px;
   line-height: 1.8;
 }
 
@@ -1329,7 +1329,7 @@ button.research-link {
   padding: 13px 16px;
   background: var(--ink);
   color: #d3dec5;
-  font-size: 11px;
+  font-size: 14px;
   line-height: 1.8;
 }
 
@@ -1406,7 +1406,7 @@ button.research-link {
   border-left: 2px solid var(--lavender);
   padding: 0 12px;
   color: #c5c4d2;
-  font-size: 11px;
+  font-size: 14px;
   line-height: 1.85;
 }
 
@@ -1477,7 +1477,7 @@ button.research-link {
 .control-help {
   margin-bottom: 9px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 14px;
   line-height: 1.75;
 }
 
@@ -1519,7 +1519,7 @@ button.research-link {
 .option-button small {
   display: block;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 400;
   line-height: 1.65;
 }
@@ -1587,7 +1587,7 @@ button.research-link {
   padding: 12px 14px;
   background: #2c3223;
   color: #e9dbb6;
-  font-size: 11px;
+  font-size: 14px;
   line-height: 1.85;
 }
 
@@ -1619,7 +1619,7 @@ button.research-link {
 
 .chart-heading > span {
   color: var(--mint);
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 400;
   letter-spacing: 0.04em;
 }
@@ -1695,7 +1695,7 @@ canvas.quant-chart {
 .empty-experiment p {
   max-width: 300px;
   margin: 0;
-  font-size: 11px;
+  font-size: 14px;
   line-height: 1.85;
 }
 
@@ -1737,7 +1737,7 @@ canvas.quant-chart {
 .signal-inspector p {
   margin: 0;
   color: #becdb2;
-  font-size: 10px;
+  font-size: 14px;
   line-height: 1.95;
   overflow-wrap: anywhere;
 }
@@ -1753,7 +1753,7 @@ canvas.quant-chart {
 .storage-caption {
   margin-top: 16px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 13px;
   line-height: 1.85;
 }
 
@@ -1792,7 +1792,7 @@ canvas.quant-chart {
   display: block;
   margin-bottom: 5px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.6;
 }
 
@@ -1847,7 +1847,7 @@ canvas.quant-chart {
 
 .storage-bar + p {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 14px;
   line-height: 1.7;
 }
 
@@ -1858,7 +1858,7 @@ canvas.quant-chart {
   padding: 12px 13px;
   background: var(--panel);
   color: #e0e5cd;
-  font-size: 11px;
+  font-size: 14px;
   line-height: 1.85;
 }
 
@@ -1885,12 +1885,49 @@ canvas.quant-chart {
 .result-feedback h3 {
   margin-bottom: 7px;
   color: var(--cream);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .result-insight {
   color: #b8cab0;
-  font-size: 10px;
+  font-size: 14px;
+}
+
+.cast-outcome {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cast-outcome img {
+  flex: 0 0 48px;
+  width: 48px;
+  height: 48px;
+}
+
+.cast-outcome h3 {
+  margin-bottom: 0;
+}
+
+.field-step {
+  width: 100%;
+  min-height: 48px;
+  margin: 12px 0;
+  font-size: 12px;
+}
+
+.outcome-scene {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 12px 0;
+  border: 1px solid var(--line);
+  aspect-ratio: 560 / 126;
+  image-rendering: pixelated;
+}
+
+.guide-back {
+  margin-bottom: 20px;
 }
 
 .math-details {
@@ -2374,7 +2411,7 @@ canvas.quant-chart {
 .guide-article li {
   margin: 14px 0;
   color: #c9d8bc;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.95;
 }
 
@@ -3162,13 +3199,13 @@ img.collection-art {
   }
 
   .journey-strip {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 6px;
     margin-top: 14px;
   }
 
   .region-stop {
-    min-height: 74px;
+    min-height: 64px;
     gap: 7px;
     padding: 10px 8px;
   }
@@ -3363,15 +3400,15 @@ img.collection-art {
 
   .dialogue-box {
     padding: 12px;
-    font-size: 11px;
+    font-size: 13px;
   }
 
   .mission-goal {
-    font-size: 11px;
+    font-size: 13px;
   }
 
   .control-help {
-    font-size: 11px;
+    font-size: 13px;
   }
 
   .option-grid {
@@ -3386,7 +3423,7 @@ img.collection-art {
   }
 
   .option-button small {
-    font-size: 9px;
+    font-size: 11px;
   }
 
   .experiment-screen {
@@ -3399,7 +3436,7 @@ img.collection-art {
 
   .chart-legend {
     gap: 4px 10px;
-    font-size: 8px;
+    font-size: 10px;
   }
 
   .metric {
@@ -3412,7 +3449,7 @@ img.collection-art {
 
   .metric-target,
   .metric-label {
-    font-size: 9px;
+    font-size: 11px;
   }
 
   .result-feedback {
@@ -3595,6 +3632,16 @@ img.collection-art {
     bottom: max(18px, env(safe-area-inset-bottom));
     padding: 12px 14px;
     font-size: 10px;
+  }
+}
+
+@media (max-width: 360px) {
+  .journey-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .region-name {
+    font-size: 11px;
   }
 }
 
