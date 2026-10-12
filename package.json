@@ -1,0 +1,17 @@
+{
+  "name": "bitbound-quantization-quest",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "An original pixel-art RPG about quantization for inference.",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build --base=./",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "node --test tests/*.test.js"
+  },
+  "devDependencies": {
+    "vite": "8.3.4"
+  },
+  "engines": { "node": ">=22.12.0" }
+}
