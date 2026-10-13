@@ -10,16 +10,18 @@ Every spell is real (toy-sized) quantization arithmetic: the values you see are 
 
 | Key | Action |
 | --- | --- |
-| Enter | Start (starts the original soundtrack) · confirm |
+| Enter | Start (enters full screen and starts the original soundtrack) · confirm |
 | WASD / arrow keys | Walk · choose menu items |
 | Shift | Run · *steady hands* while locking a grid (half speed) |
 | Enter / Space / E | Talk, read, interact · lock a grid edge · time a guard |
-| Esc | Back · pause (Resume, Field Notes, Music, Restart) |
+| Esc | Back · pause (Resume, Field Notes, Music, Full screen, Restart) |
 | N | Field Notes: every technique you have learned, a glossary and real model sizes |
 | M | Music on/off |
-| F | Full screen |
+| F | Full screen on/off (remembered) |
 
-Phones and tablets get an on-screen D-pad with **A** (act), **B** (back), **STEADY** (hold to run or to slow a breathing lock) and **START** (pause); the game reflows into a tall portrait layout and its prompts switch to the buttons you are using.
+The game is the whole screen. Starting play enters full screen, and F or the pause menu turns it off; the game remembers your choice. If your browser uses Esc to leave full screen, the game pauses. In a window, the picture still fills every pixel: the canvas grows with the window's shape from 384×216 game pixels (216×320 when the window is taller than it is wide). Each game pixel stays a whole number of screen pixels whenever that costs at most a quarter of the picture's size, which keeps the art crisp.
+
+Phones and tablets get an on-screen D-pad with **A** (act), **B** (back), **STEADY** (hold to run or to slow a breathing lock) and **START** (pause). The buttons sit below the picture in portrait and beside it in landscape, and every prompt names the buttons you are using.
 
 ## How a cast works
 
