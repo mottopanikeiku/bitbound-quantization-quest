@@ -179,6 +179,20 @@ test('both flee and defeat return complete result objects without applying save 
   }
 });
 
+test('flee copy distinguishes a waiting guardian from a disengaged static patrol', () => {
+  const guardian = fixture('nib').battle;
+  const patrol = fixture('static-0').battle;
+  guardian._end('fled');
+  patrol._end('fled');
+  assert.match(guardian.recap, /guardian/);
+  assert.match(guardian.message, /guardian/);
+  assert.match(patrol.recap, /staticling.*move away/);
+  assert.match(patrol.message, /staticling.*home/);
+  assert.doesNotMatch(patrol.recap + patrol.message, /guardian/i);
+  assert.equal(patrol.result.outcome, 'fled');
+  assert.equal(patrol.result.guardian, false);
+});
+
 test('new result coaches queue in order and cannot be skipped by a held confirm', () => {
   const { battle } = fixture('nib');
   battle.gear = intendedGear('nib');

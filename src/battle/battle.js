@@ -392,7 +392,9 @@ export class Battle {
     this.result = { outcome, hero: { ...this.hero }, gear: cloneGear(this.gear), guardian: this.guardian, foeId: this.foeId, stats: { ...this.stats }, guardTaught: guardTaught.has(this.game.state) };
     if (outcome === 'won' && !this.guardian) this.result.reward = { bytes: 6 };
     this.recap = outcome === 'won' ? this.techniqueAvailable ? LESSONS[this.foe.technique]?.recap ?? 'Fewer bytes, faithful values. That is the art of quantization.' : 'Fit a useful range with the tools you have. Grid Stones bring new choices.'
-      : outcome === 'lost' ? 'Friends stay with you. Rest, retune, and try again.' : 'Nothing is lost. The guardian waits with a fresh essence.';
+      : outcome === 'lost' ? 'Friends stay with you. Rest, retune, and try again.'
+      : this.guardian ? 'Nothing is lost. The guardian waits with a fresh essence.'
+      : 'Nothing is lost. The staticling waits until you move away.';
     if (outcome === 'won') {
       this._sound('win');
       this._effect('purify');
@@ -400,7 +402,9 @@ export class Battle {
       this._coach('win');
     } else {
       this._sound(outcome === 'lost' ? 'hurt' : 'menu-back');
-      this._say(outcome === 'lost' ? 'Your friends carry you to the campfire.' : 'You leave the fight. The guardian will reset.');
+      this._say(outcome === 'lost' ? 'Your friends carry you to the campfire.'
+        : this.guardian ? 'You leave the fight. The guardian will reset.'
+        : 'You slip away. The staticling returns home.');
     }
   }
 
