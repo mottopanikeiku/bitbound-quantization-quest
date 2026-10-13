@@ -33,6 +33,9 @@ export class Game {
     motion.addEventListener?.('change', () => (this.reducedMotion = motion.matches));
     this.time = 0;
     this.transition = null;
+    // Victory recap card waits until the zone's colour flood has played.
+    this.pendingRecap = null;
+    this.recapAt = 0;
     this.dialogue = new DialogueBox(this);
     this.lessonCard = new LessonCard(this);
     this.pauseMenu = new PauseMenu(this);
@@ -80,11 +83,20 @@ export class Game {
   }
 
   _wireButtons() {
-    document.querySelector('#music-toggle')?.addEventListener('click', () => this.toggleMusic());
-    document.querySelector('#fullscreen-toggle')?.addEventListener('click', () => this.toggleFullscreen());
+    // Return keyboard focus to the game after mouse clicks on page buttons
+    // (Input ignores keys while a plain button is focused).
+    const refocus = () => this.screen.canvas.focus({ preventScroll: true });
+    document.querySelector('#music-toggle')?.addEventListener('click', () => {
+      this.toggleMusic();
+      refocus();
+    });
+    document.querySelector('#fullscreen-toggle')?.addEventListener('click', () => {
+      this.toggleFullscreen();
+      refocus();
+    });
     const touch = document.querySelector('#touch');
     if (touch) this.input.bindTouch(touch);
-    this.screen.canvas.addEventListener('pointerdown', () => this.screen.canvas.focus({ preventScroll: true }));
+    this.screen.canvas.addEventListener('pointerdown', refocus);
   }
 
   _syncMusicButton() {
@@ -134,7 +146,9 @@ export class Game {
   }
 
   newGame() {
+    const music = this.state.music;
     this.state = freshState();
+    this.state.music = music;
     this.state.started = true;
     this.worldScene.reset();
     this.startAudio();
@@ -153,15 +167,24 @@ export class Game {
 
   /** Wipe the save and return to the title (pause → Restart adventure). */
   restart() {
+    const music = this.state.music;
     this.state = freshState();
+    this.state.music = music;
+    this.pendingRecap = null;
     this.save();
     this.worldScene.reset();
-    this.dialogue.close?.();
-    this.audio.setScene('overworld');
+    // Restart is reachable only from the pause menu (dialogue/lesson cannot be open then);
+    // close menus without firing gameplay callbacks.
+    if (this.codex.active) this.codex.close();
+    if (this.pauseMenu.active) this.pauseMenu.close();
+    this.toasts.clear?.();
+    this.setMusicScene('title');
     this.cut(() => this._setScene(this.titleScene));
   }
 
   playEnding() {
+    this.setFlag('ending-seen');
+    this.save();
     this.setMusicScene('ending');
     this.cut(() => this._setScene(this.endingScene));
   }
@@ -199,7 +222,8 @@ export class Game {
         world.restoreZone(guardian.zone);
         this.audio.play('restore');
         this.toast(`${guardian.name} joined you! Max HP +8, bytes +8.`, { kind: 'reward', ms: 4200 });
-        this.lesson(ZONES[guardian.zone].technique, { mode: 'recap' });
+        this.pendingRecap = ZONES[guardian.zone].technique;
+        this.recapAt = this.time + 2.4;
       };
     } else if (result.outcome === 'lost') {
       state.hero = { hp: stats.maxHp, bytes: stats.maxBytes, snacks: Math.max(3, result.hero.snacks ?? 0) };
@@ -217,9 +241,9 @@ export class Game {
     world.afterBattle(params.uid, result.outcome);
     this.cut(
       () => {
-        this._setScene(this.worldScene, {});
-        this.save();
+        this._setScene(this.worldScene, { fromBattle: true });
         after?.();
+        this.save();
       },
       { kind: 'fade' },
     );
@@ -339,8 +363,11 @@ export class Game {
       if (this.scene !== this.titleScene) this.toggleMusic();
       else {
         this.state.music = !this.state.music;
+        // Never unlocks or creates an AudioContext; mutes already-running title music.
+        this.audio.setEnabled(this.state.music);
         this._syncMusicButton();
-        this.toast(this.state.music ? 'Music will start with Enter' : 'Starting muted', { kind: 'notice', ms: 1400 });
+        this.save();
+        this.toast(this.state.music ? 'Music on: it starts with Enter' : 'Muted: Enter starts silently', { kind: 'notice', ms: 1400 });
       }
     }
     if (input.pressed('fullscreen')) {
@@ -351,14 +378,20 @@ export class Game {
       this._advanceTransition(dt);
     } else {
       const overlay = this._overlay();
-      if (overlay) overlay.update(dt, input);
+      const recapDue = this.pendingRecap && !overlay && this.scene === this.worldScene && this.time >= this.recapAt;
+      if (recapDue) {
+        const id = this.pendingRecap;
+        this.pendingRecap = null;
+        this.lesson(id, { mode: 'recap' });
+      } else if (overlay) overlay.update(dt, input);
       else {
         const inWorld = this.scene === this.worldScene;
         const inBattle = this.scene === this.battleScene;
-        if (inWorld && input.pressed('notes')) {
+        const worldFree = inWorld && this.worldScene.world.canPause !== false;
+        if (worldFree && input.pressed('notes')) {
           input.consume('notes');
           this.openNotes();
-        } else if ((inWorld || (inBattle && this.battleScene.canPause)) && input.pressed('pause')) {
+        } else if ((worldFree || (inBattle && this.battleScene.canPause)) && input.pressed('pause')) {
           input.consume('pause');
           input.consume('cancel');
           this.openPause();
@@ -419,8 +452,11 @@ export class Game {
     const parts = [`Scene ${scene}`, `HP ${s.hero.hp}/${stats.maxHp}`, `Bytes ${s.hero.bytes}/${stats.maxBytes}`, `Friends ${s.friends.length}/7`];
     if (overlay) parts.push(`Overlay ${overlay.constructor.name}`);
     if (scene === 'world') {
-      const p = this.worldScene.world.position;
+      const world = this.worldScene.world;
+      const p = world.position;
       parts.push(`Zone ${p.zone}`, `Position ${Math.round(p.x)},${Math.round(p.y)}`);
+      const detail = typeof world.describe === 'function' ? world.describe() : '';
+      if (detail) parts.push(detail);
     }
     if (scene === 'battle') parts.push(this.battleScene.describe());
     return parts.join('. ');
