@@ -11,9 +11,17 @@ import { formatFidelity } from './metrics.js';
 const COMMANDS = ['SNAP', 'TUNE', 'GUARD', 'SNACK', 'SCAN', 'FLEE'];
 const COMMAND_HINTS = ['Lock a grid. Turn values into a spell.', 'Free: choose bits and techniques.', 'Brace next hit ×0.5. Recover 12 B.', 'Heal half your max HP. Uses a turn.', 'Free: inspect the essence and a hint.', 'Leave safely. This foe will reset.'];
 
+/**
+ * Panels, creature and grid keep their designed composition inside a centred box; on larger or
+ * oddly shaped screens the animated backdrop fills everything around it.
+ */
+const BATTLE_BOX = { landscape: { w: 480, h: 288 }, portrait: { w: 320, h: 480 } };
+
 export function battleLayout(screen, foeId = 'nib', inputDriven = false) {
-  const { w, h } = screen;
-  const portrait = screen.portrait ?? w < 300;
+  const portrait = screen.portrait ?? screen.w < 300;
+  const box = BATTLE_BOX[portrait ? 'portrait' : 'landscape'];
+  const w = Math.min(screen.w, box.w);
+  const h = Math.min(screen.h, box.h);
   const size = battleCreatureSize(foeId);
   const bottom = portrait ? Math.min(166, h - 191) : h - 63;
   const stage = { x: portrait ? Math.floor((w - size.w) / 2) : w - 8 - size.w, y: bottom - size.h, w: size.w, h: size.h };
@@ -35,6 +43,8 @@ export function battleLayout(screen, foeId = 'nib', inputDriven = false) {
     grid: { x: 8, y: 48, w: Math.min(246, stage.x - 14), h: h - 112 },
     command: { x: 8, y: 66, w: 126, h: 82 },
     commandHint: { x: 8, y: 35, w: 126, h: 25 },
+    cost: { x: w - 82, y: 6, w: 74, h: 15 },
+    result: { x: 8, y: 45, w: 180, h: 102 },
   };
   layout.foe = { x: stage.x + Math.floor(stage.w / 2), y: bottom };
   // Input-driven locks deliberately show a face reaction window beside the
@@ -49,6 +59,15 @@ export function battleLayout(screen, foeId = 'nib', inputDriven = false) {
   const guardBottom = layout.party.y - 4;
   const guardRadius = Math.min(47, Math.floor((guardBottom - guardTop) / 2));
   layout.guard = { x: layout.party.x + Math.floor(layout.party.w / 2), y: guardBottom - guardRadius, radius: guardRadius };
+  const ox = Math.floor((screen.w - w) / 2);
+  const oy = Math.floor((screen.h - h) / 2);
+  const moved = new Set();
+  for (const rect of Object.values(layout)) {
+    if (!rect || typeof rect !== 'object' || moved.has(rect)) continue;
+    moved.add(rect);
+    rect.x += ox;
+    rect.y += oy;
+  }
   return layout;
 }
 
@@ -92,9 +111,10 @@ function drawHeader(ctx, battle, layout, t) {
     drawText(ctx, battle.guardian ? 'GUARDIAN' : 'PRACTICE', r.x + r.w + 9, r.y + 3, { font: 'small', color: PAL.ui.dim });
     if (battle.bossPhase === 2) drawText(ctx, 'PHASE 2', r.x + r.w + 9, r.y + 12, { font: 'small', color: PAL.ui.gold });
     const cost = battle.preview?.cost ?? 0;
-    drawWindow(ctx, 302, 6, 74, 15, cost > battle.hero.bytes ? 'danger' : 'gold', t);
-    drawIcon(ctx, 'byte', 308, 9);
-    drawText(ctx, `${cost} B / CAST`, 370, 10, { font: 'small', align: 'right', color: cost > battle.hero.bytes ? PAL.ui.error : PAL.ui.gold });
+    const chip = layout.cost;
+    drawWindow(ctx, chip.x, chip.y, chip.w, chip.h, cost > battle.hero.bytes ? 'danger' : 'gold', t);
+    drawIcon(ctx, 'byte', chip.x + 6, chip.y + 3);
+    drawText(ctx, `${cost} B / CAST`, chip.x + chip.w - 6, chip.y + 4, { font: 'small', align: 'right', color: cost > battle.hero.bytes ? PAL.ui.error : PAL.ui.gold });
   }
 }
 
@@ -319,7 +339,7 @@ function drawEnemyTurn(ctx, battle, layout, t) {
 
 function drawResult(ctx, battle, layout, t) {
   const won = battle.result.outcome === 'won';
-  const r = layout.portrait ? layout.work : { x: 8, y: 45, w: 180, h: 102 };
+  const r = layout.portrait ? layout.work : layout.result;
   const y = layout.portrait ? Math.max(layout.foe.y + 8, r.y + Math.floor(r.h * 0.48)) : r.y;
   const h = Math.min(layout.portrait ? 89 : 102, r.y + r.h - y);
   drawWindow(ctx, r.x, y, r.w, h, won ? 'gold' : 'default', t);

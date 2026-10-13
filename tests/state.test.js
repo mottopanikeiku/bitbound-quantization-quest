@@ -29,6 +29,16 @@ test('older save formats and corrupt JSON start a fresh adventure', () => {
   assert.equal(sanitize({ version: 2, started: true, completed: [0, 1] }).started, false);
 });
 
+test('full screen starts on, and a player who turns it off keeps it off', () => {
+  const storage = memoryStorage();
+  const state = newGame();
+  assert.equal(state.fullscreen, true);
+  state.fullscreen = false;
+  saveGame(state, storage);
+  assert.equal(loadGame(storage).fullscreen, false);
+  assert.equal(sanitize({ version: 3, music: false }).fullscreen, true, 'saves from before the option enter full screen');
+});
+
 test('friends must be an in-order prefix and gear needs its technique', () => {
   const state = sanitize({
     version: 3,

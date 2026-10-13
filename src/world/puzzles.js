@@ -292,7 +292,7 @@ export function puzzleControls(puzzle, settings, hasTool = true) {
 
 /** Native-pixel layout: one expanded plot, not three unreadable phone miniatures. */
 export function puzzleLayout(screen, puzzle) {
-  const portrait = screen.w < 300;
+  const portrait = screen.portrait ?? screen.w < 300;
   const window = { x: 6, y: 6, w: screen.w - 12, h: screen.h - 12 };
   const innerX = window.x + 9, innerW = window.w - 18;
   const goalY = window.y + 34;

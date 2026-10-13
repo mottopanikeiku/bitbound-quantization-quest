@@ -41,7 +41,8 @@ export class Input {
     this._holdTime = new Map();
     this._repeatAt = new Map();
     this._repeating = new Set();
-    this.lastDevice = 'keyboard';
+    // Touch-first devices show A/B prompts before the first tap; any key press switches back.
+    this.lastDevice = globalThis.matchMedia?.('(pointer: coarse)').matches ? 'touch' : 'keyboard';
     this._onKeyDown = (event) => {
       const actions = actionsFor(event);
       if (!actions || ignoredTarget(event.target) || event.ctrlKey || event.metaKey || event.altKey) return;
