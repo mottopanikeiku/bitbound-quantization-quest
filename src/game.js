@@ -207,6 +207,7 @@ export class Game {
     state.stats.perfects += result.stats?.perfects ?? 0;
     state.stats.fizzles += result.stats?.fizzles ?? 0;
     state.gear = { ...state.gear, ...result.gear };
+    if (result.guardTaught) this.setFlag('guard-taught');
     const world = this.worldScene.world;
     const guardian = GUARDIANS.find((g) => g.key === result.foeId);
     let after = null;
@@ -232,11 +233,13 @@ export class Game {
         this.toast('You wake by the campfire. Friends kept; try a new plan.', { kind: 'notice', ms: 4200 });
       };
     } else {
+      const reward = result.outcome === 'won' ? Math.max(0, Math.trunc(result.reward?.bytes ?? 0)) : 0;
       state.hero = {
         hp: Math.max(1, Math.min(stats.maxHp, result.hero.hp ?? state.hero.hp)),
-        bytes: Math.max(0, Math.min(stats.maxBytes, result.hero.bytes ?? state.hero.bytes)),
+        bytes: Math.max(0, Math.min(stats.maxBytes, (result.hero.bytes ?? state.hero.bytes) + reward)),
         snacks: Math.max(0, Math.min(stats.maxSnacks, result.hero.snacks ?? state.hero.snacks)),
       };
+      if (reward) after = () => this.toast(`Static cleared: +${reward} B`, { kind: 'reward', ms: 2200 });
     }
     world.afterBattle(params.uid, result.outcome);
     this.cut(
@@ -317,12 +320,15 @@ export class Game {
     this.state.camp = campId;
     this.worldScene.world.respawnStaticlings();
     this.audio.play('heal');
-    this.toast('Rested: HP and bytes restored. Staticlings stir again.', { kind: 'notice', ms: 3200 });
+    this.toast('Rested: HP and bytes restored. Awake patrols return home.', { kind: 'notice', ms: 3200 });
     this.save();
   }
 
-  setFlag(id) {
-    if (!this.state.flags.includes(id)) this.state.flags.push(id);
+  /** Set (default) or clear a progression flag. */
+  setFlag(id, value = true) {
+    const at = this.state.flags.indexOf(id);
+    if (value && at < 0) this.state.flags.push(id);
+    else if (!value && at >= 0) this.state.flags.splice(at, 1);
   }
 
   hasFlag(id) {
@@ -388,10 +394,11 @@ export class Game {
         const inWorld = this.scene === this.worldScene;
         const inBattle = this.scene === this.battleScene;
         const worldFree = inWorld && this.worldScene.world.canPause !== false;
-        if (worldFree && input.pressed('notes')) {
+        const battleFree = inBattle && this.battleScene.canPause;
+        if ((worldFree || battleFree) && input.pressed('notes')) {
           input.consume('notes');
           this.openNotes();
-        } else if ((worldFree || (inBattle && this.battleScene.canPause)) && input.pressed('pause')) {
+        } else if ((worldFree || battleFree) && input.pressed('pause')) {
           input.consume('pause');
           input.consume('cancel');
           this.openPause();
@@ -446,8 +453,8 @@ export class Game {
   describe() {
     const s = this.state;
     const stats = this.stats();
-    const scene =
-      this.scene === this.battleScene ? 'battle' : this.scene === this.worldScene ? 'world' : this.scene === this.titleScene ? 'title' : this.scene === this.introScene ? 'intro' : 'ending';
+    const names = new Map([[this.battleScene, 'battle'], [this.worldScene, 'world'], [this.titleScene, 'title'], [this.introScene, 'intro'], [this.endingScene, 'ending']]);
+    const scene = names.get(this.scene) ?? 'gallery';
     const overlay = this._overlay();
     const parts = [`Scene ${scene}`, `HP ${s.hero.hp}/${stats.maxHp}`, `Bytes ${s.hero.bytes}/${stats.maxBytes}`, `Friends ${s.friends.length}/7`];
     if (overlay) parts.push(`Overlay ${overlay.constructor.name}`);

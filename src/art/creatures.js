@@ -21,6 +21,23 @@ const BOUNDS = Object.fromEntries(CREATURE_IDS.map((id) => {
 const motionPreference = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
 const WAVE = [0, 1, 1, 1, 0, -1, -1, -1];
 const RAMPS = Object.fromEntries(Object.entries(PAL).filter(([, v]) => Array.isArray(v)).map(([key, r]) => [key, [r[0], r[Math.round((r.length - 1) * .28)], r[Math.round((r.length - 1) * .52)], r[Math.round((r.length - 1) * .76)], r.at(-1)]]));
+const FACE_MATERIALS = ['cream', 'teal', 'snow', 'cream', 'sand', 'snow', 'cream'];
+const CORRUPT_RAMP = [PAL.violet[1], PAL.violet[3], PAL.violet[5], PAL.violet[7]];
+const VESPER_FACE_RAMP = [PAL.violet[3], PAL.violet[6], PAL.violet[7], PAL.violet[8]];
+// Quantize within a material, rather than throwing every material into the same
+// violet luminance ramp. The identity-bearing accents and pale faces survive.
+const MATERIALS = new Map();
+for (const [name, colors] of Object.entries(PAL)) {
+  if (!Array.isArray(colors)) continue;
+  const levels = [colors[0], colors[Math.round((colors.length - 1) * .38)], colors[Math.round((colors.length - 1) * .72)], colors.at(-1)];
+  colors.forEach((color, i) => MATERIALS.set(u32(color), {
+    name, value: i / (colors.length - 1), color: levels[Math.round(i / (colors.length - 1) * 3)],
+  }));
+}
+const FOCAL_AREAS = [
+  [43, 62, 21, 20], [42, 44, 18, 18], [42, 44, 25, 23],
+  [56, 43, 17, 24], [48, 63, 20, 18], [46, 41, 22, 20], [58, 49, 34, 28],
+];
 
 /** Small private modelling vocabulary: rounded volumes, lit planar faces,
  * cubic strokes, and deliberate pixel accents. Material outlines stay local. */
@@ -305,7 +322,7 @@ function staticling(s, zone, f, blink) {
     s.face([[14, 16], [37, 16], [44, 23], [43, 42], [37, 49], [15, 49], [9, 40], [10, 23]], 'violet');
     s.face([[37, 16], [44, 23], [43, 42], [37, 49], [34, 29]], 'violet', [.7, .3, .5], false);
   } else s.ball(27, 32, 19, zone === 5 ? 16 : 19, 'violet');
-  s.ball(24, 38, 12, 9, 'violet', .08);
+  s.ball(27, 34, 15, 12, FACE_MATERIALS[zone], zone === 1 ? .12 : 0);
   if (zone === 0) s.leaf([[24, 18], [15, 9 + w], [21, 3 + w], [35, 8], [31, 18]], [[20, 8 + w], [29, 19]]);
   if (zone === 1) { crystal(s, 17, 6 + w, 11, 19); crystal(s, 31, 13 - w, 8, 12, 'violet'); }
   if (zone === 2) s.face([[20, 20], [28, 2 + w], [37, 19]], 'water');
@@ -331,17 +348,48 @@ function staticling(s, zone, f, blink) {
 
 export function battleCreatureSize(id) { return BOUNDS[id] ?? BOUNDS['static-0']; }
 function zoneOf(id) { return id.startsWith('static-') ? Math.max(0, Math.min(6, Number(id.slice(7)) || 0)) : Math.max(0, CREATURE_IDS.indexOf(id)); }
-function corruptPixels(p, zone, f) {
-  const accent = PAL[ACCENTS[zone]], colors = [PAL.violet[0], PAL.violet[2], PAL.violet[4], PAL.violet[6], accent[Math.min(accent.length - 1, 6)]];
+function corruptPixels(p, id, f) {
+  const zone = zoneOf(id), accent = PAL[ACCENTS[zone]], small = p.w < 30, practice = id.startsWith('static-');
+  const focal = small ? [12, 14, 8, 8] : practice ? [27, 34, 16, 13] : FOCAL_AREAS[zone];
+  const cy = focal[1] - Math.max(0, WAVE[f]), drift = [0, 1, 0, -1][f % 4];
   p.each((x, y, c) => {
     if (c === u32(PAL.ink)) return c;
-    const l = ((c & 255) * .23 + ((c >>> 8) & 255) * .62 + ((c >>> 16) & 255) * .15) / 255;
-    return shadeRamp(colors, l, x, y, .25);
+    const material = MATERIALS.get(c);
+    if (!material) return c;
+    const light = ((c & 255) * .23 + ((c >>> 8) & 255) * .62 + ((c >>> 16) & 255) * .15) / 255;
+    const face = ((x - focal[0]) / focal[2]) ** 2 + ((y - cy) / focal[3]) ** 2 < 1;
+    if (!practice && zone === 5 && face && material.name === 'violet' && material.value > 0) {
+      return shadeRamp(VESPER_FACE_RAMP, material.value);
+    }
+    // Mouths, eyes, and contact lines remain dark on the preserved light mass.
+    if (light < .19) return c;
+    const warmLight = material.name === 'cream' || material.name === 'snow' || material.name === 'gold';
+    const identity = practice ? material.name !== 'violet'
+      : warmLight
+        || (zone === 0 && (material.name === 'rose' || material.name === 'water' || y < p.h * .42))
+        || (zone === 1 && y < p.h * .3)
+        || (zone === 2 && material.name === 'rose')
+        || (zone === 4 && material.name === 'ember')
+        || (zone === 6 && material.name === 'teal' && y < p.h * .56);
+    const step = Math.floor(y / (small ? 3 : 8)) % 2;
+    const patch = (x > p.w * .55 + drift + step * 2 && y > p.h * .22 && y < p.h * .66)
+      || (x > p.w * .13 && x < p.w * .44 + drift && y > p.h * .65 && y < p.h * .89);
+    if (patch && !face && !identity) return shadeRamp(CORRUPT_RAMP, .2 + light * .72);
+    return material.color;
   });
-  for (let i = 0; i < 15; i++) {
-    const x = Math.floor(hash2(i, f, zone + 9) * p.w), y = Math.floor(hash2(f, i, zone + 29) * p.h);
-    if (p.opaque(x, y)) for (let dx = 0; dx < 3; dx++) if (p.opaque(x + dx, y)) p.set(x + dx, y, i % 3 ? PAL.violet[7] : accent.at(-2));
+  // Only a few coherent static scars; do not stipple every flat face or belly.
+  for (let i = 0; i < (small ? 2 : 5); i++) {
+    const x = Math.floor(p.w * (.17 + hash2(i, f, zone + 9) * .65));
+    const y = Math.floor(p.h * (.25 + hash2(f, i, zone + 29) * .57));
+    if (((x - focal[0]) / focal[2]) ** 2 + ((y - cy) / focal[3]) ** 2 < 1) continue;
+    for (let dx = 0; dx < (small ? 2 : 4); dx++) {
+      if (p.opaque(x + dx, y)) p.set(x + dx, y, i % 2 ? PAL.violet[7] : accent.at(-2));
+    }
   }
+  if (!small && !practice && zone === 5) p.line(44, 49 - Math.max(0, WAVE[f]), 48, 49 - Math.max(0, WAVE[f]), PAL.violet[1]);
+  // A narrow material-coloured upper rim separates violet patches from the
+  // moving practice field; bottom/right edges stay ink-dark, never violet-on-violet.
+  if (!small) p.outline((x, y) => x < p.w * .46 || y < p.h * .3 ? accent[3] : PAL.ink);
 }
 // Anticipation is rasterised into its own discrete poses. This preserves the one
 // pixel scale and bottom-centre anchor, unlike a canvas scale() at draw time.
@@ -366,7 +414,7 @@ function battleFrames(id, corrupted, phase, squash, blink, white = false) {
     const art = new Pix(w, h), s = new SpriteBuilder(art, -Math.max(0, WAVE[f]));
     if (PAINTERS[id]) PAINTERS[id](s, f, blink, phase);
     else staticling(s, zone, f, blink);
-    if (corrupted) corruptPixels(art, zone, f);
+    if (corrupted) corruptPixels(art, id, f);
     p.stamp(art, 8, 16);
     reshape(p, squash);
     if (white) p.each(() => PAL.white);
@@ -470,7 +518,7 @@ export function drawSpirit(ctx, guardianId, x, y, opts = {}) {
   const dir = opts.dir ?? 'down', blink = Math.floor(t * 8 + zoneOf(id) * 3) % 37 === 0;
   const image = spriteCache(`spirit-v2:${id}:${f}:${dir}:${+blink}:${+!!opts.corrupted}`, 26, 27, (p) => {
     miniGuardian(p, id, f, dir, blink);
-    if (opts.corrupted) corruptPixels(p, zoneOf(id), f);
+    if (opts.corrupted) corruptPixels(p, id, f);
   });
   shadow(ctx, x, y, 8);
   const hop = opts.moving ? Math.max(0, WAVE[f]) : 0;
@@ -482,6 +530,7 @@ export function drawStaticling(ctx, zoneId, x, y, opts = {}) {
   const image = spriteCache(`static-mini-v2:${zone}:${f}:${side}:${+back}:${+!!opts.alert}`, 20, 24, (p) => {
     const s = new SpriteBuilder(p, -Math.max(0, WAVE[f]));
     s.ball(10, 17, 7, 6, 'violet');
+    if (!back) s.ball(10, 17, 5, 4, FACE_MATERIALS[zone], zone === 1 ? .12 : 0);
     if (zone === 0) s.leaf([[8, 13], [4, 8], [10, 7], [14, 11]], [[6, 9], [11, 12]]);
     if (zone === 1) crystal(s, 9, 6, 5, 9);
     if (zone === 2) s.face([[6, 14], [10, 6], [15, 14]], 'water');
@@ -500,6 +549,71 @@ export function drawStaticling(ctx, zoneId, x, y, opts = {}) {
   drawSlices(ctx, image, Math.round(x - 10), Math.round(y - 23), true, f);
 }
 
+function friendEmblem(p, id, blink, pulse) {
+  const n = p.w, c = Math.floor(n / 2), bottom = n - 1, gap = n === 10 ? 1 : 2;
+  const s = new SpriteBuilder(p), faceY = n - 4;
+  let eyes = PAL.ink, eyeY = n - 5;
+  if (id === 'nib') {
+    s.ball(c, faceY, n === 10 ? 3.5 : 4.5, 3.5, 'leaf').ball(c, faceY, n === 10 ? 2.8 : 3.6, 2.7, 'cream');
+    s.leaf([[0, 4], [3, 1], [c + 1, 0], [n - 1, 3], [n - 3, 5], [c, 3], [2, 6]], [[2, 4], [c + 1, 2]]);
+    s.dot(3, 2, pulse ? PAL.leaf[6] : PAL.leaf[5]);
+  } else if (id === 'chime') {
+    s.line(2, 0, 3, 3, PAL.teal[7]).line(n - 3, 0, n - 4, 3, PAL.teal[5]);
+    s.face([[3, 2], [n - 4, 2], [n - 3, bottom - 3], [n - 1, bottom - 2], [0, bottom - 2], [2, bottom - 3]], 'teal');
+    s.dot(3, 3, PAL.teal[7], 2, Math.max(1, n - 7));
+    s.line(2, bottom - 2, n - 3, bottom - 2, PAL.gold[5]).dot(c, bottom - 1, PAL.gold[7]);
+  } else if (id === 'brine') {
+    for (const side of [-1, 1]) {
+      const x = side < 0 ? 1 : n - 2;
+      s.line(x, 3, x, bottom - 3, PAL.rose[4]);
+      s.dot(x + side, 2 + pulse, PAL.rose[6]).dot(x + side, 5, PAL.rose[6]).dot(x + side, bottom - 2, PAL.rose[5]);
+    }
+    s.ball(c, faceY - 1, n === 10 ? 3.5 : 4, 4, 'water').ball(c, faceY, n === 10 ? 2.7 : 3.2, 2.8, 'snow');
+    s.line(c - 2, bottom, c + 2, bottom, PAL.water[6]);
+  } else if (id === 'spindle') {
+    s.face([[0, 2], [c - 1, 4], [c - 1, bottom - 1], [1, bottom], [0, bottom - 4]], 'violet');
+    s.face([[n - 1, 2], [c + 1, 4], [c + 1, bottom - 1], [n - 2, bottom], [n - 1, bottom - 4]], 'violet', [.5, .2, .7]);
+    s.dot(1, 4, PAL.cream[2], 1, 2).dot(n - 2, 4, PAL.cream[1], 1, 2);
+    s.dot(2, bottom - 2, PAL.sky[5]).dot(n - 3, bottom - 2, PAL.sky[4]);
+    s.line(c - 1, 3, c - 2, 0, PAL.gold[6]).line(c + 1, 3, c + 2, 0, PAL.gold[5]);
+    s.ball(c, faceY - 1, gap + 1, 3.5, 'cream');
+  } else if (id === 'cinder') {
+    eyeY = n === 10 ? 3 : 4;
+    const coalRadius = n === 10 ? 2 : 3;
+    s.face([[2, 3], [n - 3, 3], [n - 1, 6], [n - 2, bottom], [2, bottom], [0, 6]], 'ash');
+    s.dot(c - 2, 1, PAL.ash[2], 4, 3).dot(c - 1, 0, PAL.ember[pulse ? 8 : 6], 2);
+    s.dot(c - gap - 1, eyeY - 1, PAL.ash[6], gap * 2 + 3, 3);
+    s.face([[c, bottom - 5], [c + coalRadius, bottom - 2], [c, bottom], [c - coalRadius, bottom - 2]], 'ember', [0, 0, .65]);
+    s.dot(c - 1, bottom - 3, PAL.ember[7]).dot(c, bottom - 2, PAL.ember[8]);
+  } else if (id === 'vesper') {
+    s.face([[c, 0], [n - 3, 2], [n - 1, 6], [n - 2, bottom - 1], [c, bottom], [1, bottom - 1], [0, 5], [3, 2]], 'cream');
+    s.ball(c, faceY - 1, gap + 1.5, 3.6, 'violet', .2);
+    s.line(2, 4, c - 1, 1, PAL.cream[3]);
+    eyes = PAL.gold[7];
+  } else {
+    for (const side of [-1, 1]) {
+      const x = side < 0 ? 1 : n - 2;
+      s.line(x, 0, x, 3, PAL.gold[6]).line(x, 3, x - side * 2, 4, PAL.gold[5]);
+      s.dot(x + side, 1, PAL.gold[7]);
+    }
+    s.ball(c, faceY - 1, n === 10 ? 3.5 : 4.5, 3.8, 'teal').ball(c, bottom - 1, n === 10 ? 2.5 : 3.5, 1.8, 'cream');
+    s.dot(c, 3, PAL.gold[7]);
+  }
+  p.rect(c - gap, eyeY, blink ? 2 : 1, blink ? 1 : 2, eyes);
+  p.rect(c + gap, eyeY, blink ? 2 : 1, blink ? 1 : 2, eyes);
+  if (id === 'nib' || id === 'brine') p.set(c, bottom - 1, PAL.wood[1]);
+}
+
+/** Native 10–12 px party heads, top-left anchor; no downscaled battle sprites.
+ * size selects a separately rasterised integer layout. t drives blink/tip light. */
+export function drawFriendEmblem(ctx, guardianId, x, y, { t = 0, size = 12 } = {}) {
+  const id = typeof guardianId === 'number' ? CREATURE_IDS[guardianId] ?? 'nib' : PAINTERS[guardianId] ? guardianId : 'nib';
+  const n = Math.round(clamp(size, 10, 12)), zone = zoneOf(id);
+  const blink = Math.floor(t * 8 + zone * 3) % 41 === 0, pulse = Math.floor(t * 4 + zone) % 4 === 0 ? 1 : 0;
+  const image = spriteCache(`friend-emblem:${id}:${n}:${+blink}:${pulse}`, n, n, (p) => friendEmblem(p, id, blink, pulse));
+  ctx.drawImage(image, Math.round(x), Math.round(y));
+}
+
 function heading(ctx, screen, title, subtitle) {
   ctx.fillStyle = PAL.night[1]; ctx.fillRect(0, 0, screen.w, 29);
   drawText(ctx, title, 9, 5, { color: PAL.cream[3] });
@@ -507,11 +621,11 @@ function heading(ctx, screen, title, subtitle) {
 }
 function label(ctx, text, x, y, color = PAL.cream[3]) { drawText(ctx, text, x, y, { font: 'small', align: 'center', color, shadow: PAL.ink }); }
 function creaturesGallery(ctx, screen, t, page = 0) {
-  const pageId = page % 15, portrait = screen.w < 300;
+  const pageId = page % 16, portrait = screen.w < 300;
   drawBattleBackground(ctx, screen, pageId < 6 ? BIOMES[(pageId % 3) * 2] : 'static', t, { intensity: .55, reduced: true });
   if (pageId < 6) {
     const corrupted = pageId >= 3, group = pageId % 3, ids = group === 2 ? ['auric'] : CREATURE_IDS.slice(group * 3, group * 3 + 3);
-    heading(ctx, screen, corrupted ? 'Under the Static' : 'Guardians of the isle', `${group + 1}/3  ${corrupted ? 'Low-bit palette / moving scanlines' : 'Material light / true colours'}`);
+    heading(ctx, screen, corrupted ? 'Under the Static' : 'Guardians of the isle', `${group + 1}/3  ${corrupted ? 'Material colours / moving static scars' : 'Material light / true colours'}`);
     if (group === 2) {
       if (portrait) {
         drawBattleCreature(ctx, 'auric', screen.w / 2, 159, { t, corrupted });
@@ -530,10 +644,10 @@ function creaturesGallery(ctx, screen, t, page = 0) {
       if (!portrait) { drawSpirit(ctx, id, x, 200, { t, corrupted }); }
     });
   } else if (pageId === 6) {
-    heading(ctx, screen, 'Small trouble, seven flavours', 'Zone staticlings / native battle size');
+    heading(ctx, screen, 'Small trouble, seven flavours', 'Corrupted / light faces and zone accents');
     CREATURE_IDS.slice(7).forEach((id, i) => {
       const cols = portrait ? 3 : 4, row = Math.floor(i / cols), x = Math.round(screen.w * (i % cols + .5) / cols), y = (portrait ? 107 : 101) + row * (portrait ? 91 : 82);
-      drawBattleCreature(ctx, id, x, y, { t: t + i * .18 }); label(ctx, BIOMES[i].toUpperCase(), x, y + 6);
+      drawBattleCreature(ctx, id, x, y, { t: t + i * .18, corrupted: true }); label(ctx, BIOMES[i].toUpperCase(), x, y + 6);
     });
   } else if (pageId === 7) {
     heading(ctx, screen, 'A pocket-sized parade', 'Clean / Static / roaming / noticed');
@@ -546,6 +660,15 @@ function creaturesGallery(ctx, screen, t, page = 0) {
       drawSpirit(ctx, id, x + gap, y, { t, corrupted: true });
       drawStaticling(ctx, i, x + gap * 2, y, { t });
       drawStaticling(ctx, i, x + gap * 3, y, { t, alert: true });
+    });
+  } else if (pageId === 15) {
+    heading(ctx, screen, 'Seven friends, even at 10 pixels', 'Authored party heads / native pixel sizes');
+    const columns = portrait ? [115, 151, 187] : [150, 232, 312];
+    columns.forEach((x, i) => label(ctx, `${10 + i} PX`, x, 36, PAL.gold[6]));
+    CREATURE_IDS.slice(0, 7).forEach((id, i) => {
+      const y = 50 + i * Math.floor((screen.h - 68) / 7);
+      drawText(ctx, NAMES[i], 15, y + 2, { color: PAL.cream[2] });
+      columns.forEach((x, k) => drawFriendEmblem(ctx, id, x - Math.floor((10 + k) / 2), y, { t, size: 10 + k }));
     });
   } else {
     const id = CREATURE_IDS[pageId - 8], wide = id === 'auric';

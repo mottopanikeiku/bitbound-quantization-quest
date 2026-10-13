@@ -2,6 +2,7 @@
 // ASCII is terrain, not collision art. Placement coordinates are tile centres.
 import { TERRAIN_TYPES, isWalkable } from '../art/terrain.js';
 import { ZONES } from '../content/game-data.js';
+import { ZONE_LAYOUTS } from './layouts.js';
 
 export const TILE = 16;
 export const MAP_W = 120;
@@ -39,181 +40,7 @@ export const REGIONS = [
     '          ~~~~~           ',
     '                          ',
   ] },
-  { id: 0, key: 'meadow', x: 15, y: 64, ascii: [
-    '      ~~~~~~~~~~~~~        ',
-    '   ~~~ssff....ffsss~~~     ',
-    '  ~ss..ff..T...ff..ss~     ',
-    ' ~s..................ss~  ',
-    '~ss...,,........,,....ss~ ',
-    '~s....,,...fff..,,.....s~ ',
-    '~s..T......fff......T..s~ ',
-    '~s.........===.........ss~',
-    '~s....================..s~',
-    '~s.........===..........s~',
-    '~s..ff.....===....ff....s~',
-    '~s..ff.....===....ff....s~',
-    '~s.........===..........s~',
-    '~s.....T...===..........s~',
-    '~s.........===.....T....s~',
-    '~s...================...s~',
-    '~ss........===.........ss~',
-    ' ~s...,,...===...,,....s~ ',
-    ' ~ss..,,.........,,...ss~ ',
-    '  ~ss.....f....f.....ss~  ',
-    '   ~~sss..........sss~    ',
-    '      ~sssssssssss~~      ',
-    '       ~~~~~~~~~~~        ',
-  ] },
-  { id: 1, key: 'grove', x: 4, y: 36, ascii: [
-    '       ~~~~~~~~~~~~        ',
-    '    ~~~sTT....TTsss~~~     ',
-    '  ~~sT............Tss~~   ',
-    ' ~sT....,,,..,,,.....Ts~  ',
-    ' ~s.....,,,..,,,......s~  ',
-    '~sT...................Ts~',
-    '~s....T....===....T.....s~',
-    '~s.........===..........s~',
-    '~s...================...s~',
-    '~s.........===..........s~',
-    '~s..T......===.....T....s~',
-    '~s....~~~~~===..........s~',
-    '~s....~~~~~bbb....,,,....s~',
-    '~s....~~~~~===....,,,....s~',
-    '~s.........===..........s~',
-    '~s...================...s~',
-    '~s.........===.....T....s~',
-    '~s..T......===..........s~',
-    '~s.....,,,.....,,,.....Ts~',
-    ' ~s....,,,.....,,,.....s~ ',
-    '  ~sT...............Tss~  ',
-    '   ~~sssssssssssssss~~    ',
-    '      ~~~~~~~~~~~~~       ',
-  ] },
-  { id: 2, key: 'cove', x: 12, y: 8, ascii: [
-    '       ~~~~~~~~~~~~~       ',
-    '    ~~~sssssssssssss~~~    ',
-    '  ~~sss............ssss~  ',
-    ' ~ss....T.........T....ss~ ',
-    '~ss....................s~ ',
-    '~s.......ssssssss.......s~',
-    '~s......ss~~~~~~ss......s~',
-    '~s.....ss~~~~~~~ss......s~',
-    '~s...================...s~',
-    '~s.........===..........s~',
-    '~ss..T.....===....T....ss~',
-    ' ~ss.......===.........s~ ',
-    '  ~ss......===.........s~ ',
-    '   ~ss.....===....T....s~ ',
-    '    ~ss....===.........s~ ',
-    '     ~ss...===========.s~ ',
-    '      ~ss..===.........s~ ',
-    '       ~ss.===.........s~ ',
-    '        ~ss.....T.....ss~ ',
-    '         ~sss.........s~  ',
-    '          ~~ssssssssss~   ',
-    '            ~~~~~~~~~~    ',
-    '                          ',
-  ] },
-  { id: 3, key: 'heights', x: 45, y: 3, ascii: [
-    '        ###########        ',
-    '     ###nnnnnnnnnnn###     ',
-    '   ##nnnYnnnnnnYnnnnn##   ',
-    '  ##nnnnnnnnnnnnnnnnnn##  ',
-    ' ##nnnnnnnnnnnnnnnnnnnn## ',
-    ' #nnn####nnnnn####nnnnnn# ',
-    '##nnn#ooonnnnnooo#nnnnnn##',
-    '#nnnnoooooo===oooonnnnnnn#',
-    '#nnoo================oonn#',
-    '#nnoooooooo===oooooooonnn#',
-    '#nnnnnnnooo===ooonnnnnnnn#',
-    '#nnnYnnnooo===ooonnnnYnnn#',
-    '#nnnnnnnooo===ooonnnnnnnn#',
-    '#nnn###nooo===ooon###nnnn#',
-    '#nnn#oonooo===ooonoo#nnnn#',
-    '#nnoo================oonn#',
-    '#nnoooooooo===oooooooonnn#',
-    '#nnnnnnnnoo===oonnnnnnnnn#',
-    '##nnnnnnnnnnnnnnnnnnnnn##',
-    ' #nnnYnnnnnnnnnnnnYnnnn# ',
-    '  ##nnnnnnnnnnnnnnnnn##  ',
-    '    ####nnnnnnnnn####    ',
-    '        #########        ',
-  ] },
-  { id: 4, key: 'forge', x: 80, y: 11, ascii: [
-    '       ############        ',
-    '    ###aaaaaaaaaaaa###     ',
-    '  ##aaaYaaaaaaaaYaaaaa##   ',
-    ' ##aaaaaaaaaaaaaaaaaaaa## ',
-    ' #aaalllaaaaaaaaalllaaaa#  ',
-    '##aalllllaaaaaaalllllaaa##',
-    '#aaalllllaa===aalllllaaaa#',
-    '#aaaalllaaa===aaalllaaaaa#',
-    '#aaaa================aaaa#',
-    '#aaaaaaaaaa===aaaaaaaaaaa#',
-    '#aaaYaaaaaa===aaaaaaYaaaa#',
-    '#aaaaaaaaaa===aaaaaaaaaaa#',
-    '#aaalllaaaa===aaaalllaaaa#',
-    '#aalllllaaa===aaalllllaaa#',
-    '#aaalllaaaa===aaaalllaaaa#',
-    '#aaaa================aaaa#',
-    '#aaaaaaaaaa===aaaaaaaaaaa#',
-    '#aaaYaaaaaa===aaaaaaYaaaa#',
-    '##aaaaaaaaaaaaaaaaaaaaa##',
-    ' #aaaaalllaaaaaalllaaaa#  ',
-    '  ##aaaaaaaaaaaaaaaaa##   ',
-    '    ###aaaaaaaaaaa###     ',
-    '       ###########        ',
-  ] },
-  { id: 5, key: 'archives', x: 85, y: 42, ascii: [
-    '     #################     ',
-    '   ##rrrrrrrrrrrrrrrrr##   ',
-    '  ##rrYrrrrrrrrrrrYrrrr##  ',
-    ' ##rrrrrrrrrrrrrrrrrrrrr## ',
-    ' #rrr###rrrrrrrrr###rrrr#  ',
-    ' #rrr#rrrrrrrrrrrrr#rrrr#  ',
-    '##rrrrrrrrr===rrrrrrrrrr##',
-    '#rrrrrrrrrr===rrrrrrrrrrr#',
-    '#rrrr================rrrr#',
-    '#rrrrrrrrrr===rrrrrrrrrrr#',
-    '#rrrYrrrrrr===rrrrrYrrrrr#',
-    '#rrrrrrrrrr===rrrrrrrrrrr#',
-    '#rrrr###rrr===rrr###rrrrr#',
-    '#rrrr#rrrrr===rrrrr#rrrrr#',
-    '#rrrrrrrrrr===rrrrrrrrrrr#',
-    '#rrrr================rrrr#',
-    '#rrrrrrrrrr===rrrrrrrrrrr#',
-    '#rrrrrrrrrr===rrrrrrrrrrr#',
-    '##rrrYrrrrrrrrrrrrrYrrr##',
-    ' #rrrrrrrrrrrrrrrrrrrrr#  ',
-    '  ##rrrrrrrrrrrrrrrrr##   ',
-    '    #################     ',
-    '                          ',
-  ] },
-  { id: 6, key: 'spire', x: 47, y: 34, ascii: [
-    '          #######          ',
-    '       ###cccooccc###       ',
-    '     ##cccoooooooccc##     ',
-    '    #cccooooooooocccc#     ',
-    '   #cccoooooooooooccc#    ',
-    '  #cccoooooooooooooccc#   ',
-    ' ##ccoooooo===oooooocc##  ',
-    ' #ccooooooo===ooooooocc#  ',
-    '#ccoo================occ# ',
-    '#cooooooooo===oooooooocc# ',
-    '#coooYooooo===ooooYoooocc#',
-    '#cooooooooo===oooooooocc#',
-    '#cooooooooo===oooooooocc#',
-    '#ccoooooooo===ooooooocc# ',
-    ' #ccooooooo===oooooocc#  ',
-    ' #cco================c#  ',
-    ' ##ccoooooo===oooooocc##  ',
-    '  #cccooooo===ooooccc#   ',
-    '   #cccoooooooooccc#    ',
-    '    #cccoooooooccc#     ',
-    '     ##cccoooccc##      ',
-    '       ###ccc###        ',
-    '          ###           ',
-  ] },
+  ...ZONE_LAYOUTS,
 ];
 
 const terrain = new Uint8Array(MAP_W * MAP_H);
@@ -257,6 +84,39 @@ function trail(region, points, width = 1, type = roadTypes[region.id] ?? 'path')
   }
 }
 
+function buildBridge(region) {
+  const design = region.bridge;
+  const ground = groundTypes[region.id];
+  // Carve a narrow shore/chasm channel around its authored polyline, not the
+  // same rectangular swimming pool in every biome. The terminal islet has a
+  // three-tile landing, surrounded by a full wet margin.
+  for (const [x, y] of [...design.cells, design.reward]) {
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      tile(region.x + x + dx, region.y + y + dy, design.water, region.id, region.key);
+    }
+  }
+  const [rx, ry] = design.reward;
+  for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+    tile(region.x + rx + dx, region.y + ry + dy, design.water, region.id, region.key);
+  }
+  const [bx, by] = design.bank;
+  const dx = design.cells[0][0] - bx, dy = design.cells[0][1] - by;
+  for (let back = 0; back <= 1; back++) for (let side = -1; side <= 1; side++) {
+    tile(region.x + bx - dx * back - dy * side, region.y + by - dy * back + dx * side, ground, region.id, region.key);
+  }
+  const last = design.cells.at(-1);
+  const endX = rx - last[0], endY = ry - last[1];
+  for (let side = -1; side <= 1; side++) tile(region.x + rx - endY * side, region.y + ry + endX * side, ground, region.id, region.key);
+  const bridge = {
+    id: `bridge-${region.id}`, zone: region.id,
+    bank: point(region, bx, by), reward: point(region, rx, ry),
+    cells: design.cells.map(([x, y]) => point(region, x, y)),
+  };
+  BRIDGES.push(bridge);
+  place(region, bridge.id, 'pedestal', ...design.pedestal, { interaction: 'puzzle' });
+  place(region, `${region.key}-bridge-shard`, 'shard', rx, ry, { interaction: 'shard', puzzle: bridge.id });
+}
+
 for (const region of REGIONS) {
   region.w = Math.max(...region.ascii.map((row) => row.length));
   region.h = region.ascii.length;
@@ -276,46 +136,24 @@ for (const region of REGIONS) {
   if (region.id < 0) continue;
   const z = region.id;
   const ground = groundTypes[z];
-  // Central lane + short side trails make landmarks visible without filling every clearing.
-  trail(region, [[11, 20], [11, 8], [20, 8]], 1);
-  trail(region, [[5, 15], [21, 15]], 1);
-  trail(region, [[11, 10], [4, 10], [4, 8]], 1);
-  trail(region, [[20, 15], [22, 15], [22, 18]], 1);
-  for (const [x, y] of [[9, 14], [18, 8], [6, 15], [13, 12], [21, 13], [7, 9], [22, 18], [4, 8], [12, 17]]) {
-    tile(region.x + x, region.y + y, ground, z, region.key);
-  }
-  ENTRIES[z] = { zone: z, ...point(region, 11, 18) };
-  place(region, `${region.key}-stone`, 'gridstone', 9, 14, { interaction: 'stone' });
-  place(region, `${region.key}-shrine`, `shrine-${z}`, 18, 8, { interaction: 'shrine' });
-  place(region, `${region.key}-camp`, 'campfire', 6, 15, { interaction: 'camp' });
-  place(region, `${region.key}-tent`, 'tent', 5, 14);
-  place(region, `${region.key}-cache`, 'cache', 7, 9, { interaction: 'cache' });
-  place(region, `${region.key}-hidden`, 'shard', 22, 18, { interaction: 'shard' });
-  place(region, `${region.key}-sign`, 'sign', 12, 17, { interaction: 'sign' });
-  place(region, `${region.key}-npc-a`, 'npc', 13, 12, { interaction: 'npc', character: ['botanist', 'scholar', 'fisher', 'hiker', 'smith', 'librarian', 'scholar'][z] });
-  place(region, `${region.key}-npc-b`, 'npc', 21, 13, { interaction: 'npc', character: ['kid', 'botanist', 'sailor', 'scholar', 'hiker', 'kid', 'hiker'][z] });
-  // A genuine isolated reward islet: the four stones are the only dry route.
-  for (let y = 1; y <= 7; y++) for (let x = 2; x <= 8; x++) tile(region.x + x, region.y + y, z >= 3 ? 'deep' : 'water', z, region.key);
-  tile(region.x + 5, region.y + 2, ground, z, region.key);
-  tile(region.x + 5, region.y + 3, ground, z, region.key);
-  for (let x = 3; x <= 6; x++) tile(region.x + x, region.y + 8, ground, z, region.key);
-  const bridge = { id: `bridge-${z}`, zone: z, cells: [4, 5, 6, 7].map((y) => point(region, 5, y)) };
-  BRIDGES.push(bridge);
-  place(region, bridge.id, 'pedestal', 4, 8, { interaction: 'puzzle' });
-  place(region, `${region.key}-bridge-shard`, 'shard', 5, 2, { interaction: 'shard', puzzle: bridge.id });
-  // Distinct landmarks and colour accents flank, rather than obscure, the route.
-  const landmarks = [
-    [['tree-oak', 17, 5], ['flowerbed', 15, 11], ['stump', 23, 17], ['flowerbed', 18, 18]],
-    [['tree-willow', 17, 5], ['crystal-cluster', 15, 11], ['mushroom', 19, 18], ['lantern', 9, 10]],
-    [['boat', 24, 10], ['reeds', 14, 5], ['tree-palm', 19, 18], ['dock', 23, 12]],
-    [['banner', 15, 7], ['pillar', 22, 10], ['tree-pine', 18, 18], ['banner', 9, 11]],
-    [['furnace', 16, 5], ['anvil', 15, 12], ['banner', 22, 10], ['rock-l', 19, 19]],
-    [['bookshelf', 16, 5], ['bookshelf', 23, 10], ['pillar', 15, 11], ['lantern', 19, 18]],
-    [['pillar', 16, 5], ['pillar', 22, 6], ['crystal-cluster', 15, 11], ['statue', 19, 18]],
-  ][z];
-  for (const [kind, x, y] of landmarks) place(region, `${region.key}-${kind}-${x}`, kind, x, y);
-  for (let i = 0; i < 3; i++) {
-    const [x, y] = [[18, 16], [21, 11], [13, 6]][i];
+  const [ex, ey, facing] = region.entry;
+  ENTRIES[z] = { zone: z, ...point(region, ex, ey), facing };
+  buildBridge(region);
+  place(region, `${region.key}-stone`, 'gridstone', ...region.stone, { interaction: 'stone' });
+  place(region, `${region.key}-shrine`, region.shrineKind ?? `shrine-${z}`, ...region.shrine, { interaction: 'shrine' });
+  place(region, `${region.key}-camp`, 'campfire', ...region.camp, { interaction: 'camp' });
+  place(region, `${region.key}-tent`, 'tent', ...region.tent);
+  place(region, `${region.key}-cache`, 'cache', ...region.cache, { interaction: 'cache' });
+  place(region, `${region.key}-hidden`, 'shard', ...region.hidden, { interaction: 'shard' });
+  place(region, `${region.key}-sign`, 'sign', ...region.sign, { interaction: 'sign' });
+  place(region, `${region.key}-npc-a`, 'npc', ...region.npcs[0], { interaction: 'npc', character: ['botanist', 'scholar', 'fisher', 'hiker', 'smith', 'librarian', 'scholar'][z] });
+  place(region, `${region.key}-npc-b`, 'npc', ...region.npcs[1], { interaction: 'npc', character: ['kid', 'botanist', 'sailor', 'scholar', 'hiker', 'kid', 'hiker'][z] });
+  for (const [kind, x, y] of region.props) place(region, `${region.key}-${kind}-${x}-${y}`, kind, x, y);
+  for (const item of INTERACTABLES.filter((item) => item.zone === z)) tile(item.tx, item.ty, ground, z, region.key);
+  // Authored homes sit away from service approaches. Lifecycle activation is
+  // handled by the world: sleeping before the stone, purified after friendship.
+  for (let i = 0; i < region.patrols.length; i++) {
+    const [x, y] = region.patrols[i];
     tile(region.x + x, region.y + y, ground, z, region.key);
     STATICLINGS.push({ uid: `${region.key}-static-${i}`, zone: z, ...point(region, x, y), seed: z * 13 + i });
   }
@@ -348,13 +186,13 @@ for (const item of INTERACTABLES.filter((item) => item.zone < 0)) tile(item.tx, 
 
 // Only these necks connect shores. Gate cross-sections cover the ENTIRE neck.
 const ROUTES = [
-  { from: -1, to: 0, points: [[49, 77], [40, 77], [40, 80], [26, 80]], gate: null },
-  { from: 0, to: 1, points: [[26, 79], [26, 55], [15, 55]], gate: [26, 61, 'horizontal'] },
-  { from: 1, to: 2, points: [[15, 44], [23, 44], [23, 27]], gate: [23, 33, 'horizontal'] },
-  { from: 2, to: 3, points: [[31, 23], [56, 23], [56, 18]], gate: [41, 23, 'vertical'] },
-  { from: 3, to: 4, points: [[64, 18], [75, 18], [75, 26], [91, 26]], gate: [73, 18, 'vertical'] },
-  { from: 4, to: 5, points: [[98, 26], [98, 57]], gate: [98, 38, 'horizontal'] },
-  { from: 5, to: 6, points: [[96, 57], [78, 57], [78, 49], [58, 49]], gate: [80, 57, 'vertical'] },
+  { from: -1, to: 0, points: [[49, 77], [40, 77]], gate: null },
+  { from: 0, to: 1, points: [[26, 65], [26, 57], [15, 57]], gate: [26, 61, 'horizontal'] },
+  { from: 1, to: 2, points: [[23, 37], [23, 28]], gate: [23, 33, 'horizontal'] },
+  { from: 2, to: 3, points: [[37, 22], [46, 22]], gate: [41, 22, 'vertical'] },
+  { from: 3, to: 4, points: [[70, 17], [75, 17], [75, 26], [81, 26]], gate: [73, 17, 'vertical'] },
+  { from: 4, to: 5, points: [[98, 32], [98, 43]], gate: [98, 38, 'horizontal'] },
+  { from: 5, to: 6, points: [[86, 57], [78, 57], [78, 53], [72, 53]], gate: [80, 57, 'vertical'] },
 ];
 export const GATES = [];
 for (const route of ROUTES) {

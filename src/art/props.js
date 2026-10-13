@@ -26,6 +26,14 @@ export const PROPS = {
   'stone-float': box(16, 12, null), bookshelf: box(24, 32, [-10, -5, 20, 6]), pillar: box(16, 36, [-6, -5, 12, 6]),
   anvil: box(20, 14, [-7, -5, 14, 6]), furnace: box(32, 36, [-13, -10, 26, 11]),
   'crystal-cluster': box(20, 22, [-7, -5, 14, 6]), statue: box(20, 34, [-6, -5, 12, 6]), banner: box(12, 28, [-2, -3, 4, 4]),
+  'terrace-wall': box(64, 28, [-30, -5, 60, 6]),
+  // Walkable treads render below actors; other architecture retains normal Y-sort.
+  'terrace-stairs': { ...box(32, 32, null), ground: true },
+  'archive-wall': box(80, 56, [-38, -7, 76, 8]),
+  'archive-shelves': box(64, 40, [-29, -7, 58, 8]),
+  'forge-stack': box(48, 80, [-18, -12, 36, 13]),
+  'forge-wall': box(64, 40, [-30, -7, 60, 8]),
+  'spire-sanctum': box(96, 104, [-42, -12, 84, 13]),
 };
 
 const BIOMES = Object.keys(BIOME);
@@ -469,6 +477,224 @@ function gate(p, d, frame) {
   p.rect(6, 28, 36, 1, PAL.violet[5]);
 }
 
+function terrace(p, d, kind, biome, variant) {
+  const r = PAL.stone, alpine = biome === 'heights';
+  if (kind === 'terrace-stairs') {
+    const t = alpine ? PAL.snow : r;
+    p.poly([[6, 1], [26, 1], [32, 29], [31, 31], [0, 31], [0, 29]], t[alpine ? 0 : 2]);
+    for (let i = 0; i < 7; i++) {
+      const xx = 6 - i, yy = 2 + i * 4, w = 20 + i * 2;
+      p.rect(xx, yy, w, 2, t[alpine ? 2 : 5]);
+      p.rect(xx, yy + 2, w, 2, t[alpine ? 1 : 3]);
+      p.rect(xx, yy, Math.floor(w * 0.62), 1, t[alpine ? 3 : 6]);
+    }
+    if (biome === 'spire') {
+      p.line(5, 2, 0, 27, PAL.gold[4]); p.line(26, 2, 31, 27, PAL.gold[3]);
+      p.set(5, 2, PAL.gold[7]); p.set(26, 2, PAL.gold[6]);
+    }
+    return;
+  }
+  shadow(p, d.ax, d.ay, 30, 3);
+  p.poly([[1, 8], [4, 4], [29, 4], [32, 2], [60, 4], [63, 8], [62, 25], [2, 25]], r[2]);
+  p.poly([[2, 8], [61, 7], [60, 23], [3, 23]], r[4]);
+  p.rect(4, 16, 55, 7, r[3]);
+  p.poly([[1, 7], [4, 3], [28, 3], [31, 1], [60, 3], [63, 7]], alpine ? PAL.snow[3] : r[6]);
+  p.line(4, 3, 27, 3, alpine ? PAL.snow[4] : r[7]);
+  p.line(3, 9, 23, 9, r[5]); p.line(29, 8, 60, 8, r[5]);
+  p.line(8, 15, 26, 15, r[2]); p.line(33, 18, 57, 18, r[2]);
+  p.line(36, 8, 34, 13, r[3]); p.line(16, 16, 18, 22, r[2]);
+  p.rect(2, 23, 60, 2, r[2]); p.rect(3, 8, 2, 13, r[5]);
+  if (biome === 'spire') {
+    p.rect(7, 5, 50, 1, PAL.gold[4]); p.rect(28, 10, 7, 7, PAL.stone[2]);
+    p.rect(30, 12, 3, 3, PAL.teal[5]); p.set(30, 12, PAL.teal[7]);
+  } else if (!alpine && variant % 2) {
+    p.line(50, 6, 51, 12, PAL.forest[3]); p.rect(48, 8, 3, 2, PAL.forest[5]);
+    p.rect(50, 12, 4, 2, PAL.forest[4]);
+  }
+}
+
+function archiveWindow(p, x, y, lit) {
+  p.poly([[x, y + 25], [x, y + 7], [x + 4, y + 2], [x + 8, y], [x + 12, y + 3], [x + 16, y + 8], [x + 16, y + 25]], PAL.stone[2]);
+  p.poly([[x + 3, y + 22], [x + 3, y + 8], [x + 8, y + 4], [x + 13, y + 9], [x + 13, y + 22]], PAL.night[1]);
+  p.line(x + 1, y + 7, x + 7, y + 1, PAL.stone[6]);
+  p.line(x + 1, y + 8, x + 1, y + 24, PAL.stone[5]);
+  if (lit) {
+    p.rect(x + 5, y + 11, 6, 9, PAL.gold[4]);
+    p.rect(x + 5, y + 11, 3, 8, PAL.gold[6]); p.set(x + 5, y + 11, PAL.cream[2]);
+    p.rect(x + 8, y + 10, 1, 12, PAL.wood[2]);
+  } else {
+    p.line(x + 5, y + 12, x + 9, y + 10, PAL.wood[3]);
+    p.line(x + 9, y + 10, x + 12, y + 13, PAL.wood[3]);
+    p.rect(x + 4, y + 19, 4, 2, PAL.gold[3]);
+  }
+  p.rect(x - 1, y + 25, 18, 3, PAL.stone[4]);
+  p.rect(x - 1, y + 25, 17, 1, PAL.stone[6]);
+}
+
+function archiveArchitecture(p, d, kind, variant) {
+  const x = d.ax, y = d.ay, r = PAL.stone;
+  shadow(p, x, y, d.w / 2 - 2, 3);
+  if (kind === 'archive-wall') {
+    p.poly([[2, 53], [2, 13], [8, 11], [8, 4], [24, 4], [25, 14], [37, 14], [43, 21], [52, 14], [62, 15], [63, 8], [77, 7], [78, 53]], r[2]);
+    p.poly([[5, 50], [5, 15], [24, 15], [36, 17], [43, 24], [53, 17], [75, 15], [75, 50]], r[4]);
+    p.rect(6, 35, 68, 16, r[3]);
+    for (const xx of [4, 68]) {
+      p.rect(xx, 13, 8, 38, r[3]); p.rect(xx, 13, 3, 37, r[5]);
+      p.rect(xx - 2, 10, 12, 5, r[4]); p.rect(xx - 2, 10, 12, 1, r[6]);
+      p.rect(xx - 1, 48, 11, 4, r[2]); p.rect(xx - 1, 48, 10, 1, r[5]);
+    }
+    p.rect(9, 4, 14, 5, r[4]); p.rect(9, 4, 14, 1, r[6]);
+    p.line(26, 14, 36, 15, r[6]); p.line(36, 15, 42, 22, r[5]);
+    p.line(64, 8, 75, 8, r[6]);
+    archiveWindow(p, 17, 18, variant % 2 === 0);
+    archiveWindow(p, 48, 18, true);
+    // A wide open-book relief, not a door-shaped plaque between the windows.
+    p.poly([[34, 32], [40, 30], [42, 32], [48, 30], [50, 32], [49, 42], [42, 41], [35, 42]], PAL.wood[2]);
+    p.poly([[35, 33], [40, 31], [41, 33], [41, 40], [35, 40]], PAL.cream[2]);
+    p.poly([[42, 33], [48, 31], [49, 33], [48, 40], [42, 40]], PAL.cream[0]);
+    p.line(41, 33, 41, 40, PAL.wood[4]);
+    p.line(36, 35, 39, 34, PAL.wood[4]); p.line(36, 38, 39, 37, PAL.wood[4]);
+    p.line(44, 34, 47, 34, PAL.wood[3]); p.line(44, 37, 47, 37, PAL.wood[3]);
+    p.rect(2, 51, 76, 3, r[2]); p.rect(4, 50, 71, 1, r[5]);
+    p.line(14, 12, 16, 18, r[3]); p.line(61, 45, 59, 49, r[2]);
+    p.line(70, 15, 70, 23, PAL.forest[3]); p.rect(68, 18, 3, 2, PAL.forest[4]);
+    return;
+  }
+  const wood = PAL.wood, books = [PAL.violet, PAL.roof, PAL.teal];
+  p.rect(2, 5, 60, 31, wood[1]);
+  p.poly([[1, 5], [6, 1], [27, 1], [31, 3], [60, 2], [63, 6]], wood[4]);
+  p.line(6, 1, 26, 1, wood[6]); p.line(34, 3, 59, 2, wood[5]);
+  for (let bay = 0; bay < 3; bay++) {
+    const bx = 5 + bay * 19, br = books[(bay + variant) % books.length];
+    for (let row = 0; row < 3; row++) {
+      const yy = 9 + row * 8;
+      for (let book = 0; book < 4; book++) {
+        const xx = bx + book * 4, h = 4 + (book + row + variant) % 3;
+        p.rect(xx, yy + 6 - h, 3, h, br[book === 2 ? 3 : 4]);
+        p.rect(xx, yy + 6 - h, 1, h, br[5]);
+        if (book % 2 === 0) p.rect(xx, yy + 5 - h, 2, 1, PAL.gold[4]);
+      }
+      p.rect(bx - 1, yy + 6, 18, 2, wood[3]); p.rect(bx - 1, yy + 6, 18, 1, wood[5]);
+    }
+  }
+  for (const xx of [2, 22, 41, 60]) { p.rect(xx, 6, 2, 29, wood[2]); p.rect(xx, 6, 1, 28, wood[5]); }
+  p.rect(1, 35, 62, 3, wood[2]); p.rect(2, 35, 60, 1, wood[5]);
+  p.poly([[44, 30], [50, 29], [51, 30], [56, 29], [58, 34], [52, 35], [45, 34]], PAL.cream[1]);
+  p.line(51, 30, 52, 34, wood[3]); p.line(46, 31, 49, 31, wood[4]);
+}
+
+function forgeArchitecture(p, d, kind, variant, frame) {
+  const x = d.ax, y = d.ay, r = PAL.ash;
+  shadow(p, x, y, d.w / 2 - 2, 3);
+  if (kind === 'forge-stack') {
+    p.poly([[5, 76], [6, 51], [13, 43], [15, 9], [31, 9], [34, 45], [42, 53], [43, 76]], r[2]);
+    p.poly([[7, 74], [8, 53], [16, 46], [17, 9], [25, 9], [27, 47], [32, 53], [32, 74]], r[4]);
+    p.rect(17, 11, 3, 35, r[5]); p.rect(27, 11, 4, 34, r[3]);
+    p.rect(12, 5, 23, 6, r[3]); p.rect(12, 5, 22, 2, r[6]);
+    p.rect(15, 3, 17, 3, r[2]); p.rect(17, 4, 13, 2, PAL.night[0]);
+    for (const yy of [21, 33, 43]) {
+      p.rect(16, yy, 16, 1, r[2]); p.rect(17, yy - 1, 10, 1, r[5]);
+    }
+    p.rect(14, 26, 19, 3, PAL.wood[2]); p.rect(15, 26, 15, 1, PAL.gold[4]);
+    p.rect(34, 31, 5, 22, PAL.stone[2]); p.rect(34, 31, 2, 19, PAL.stone[5]);
+    p.rect(33, 32, 7, 2, PAL.stone[4]); p.rect(33, 47, 7, 2, PAL.stone[4]);
+    p.poly([[11, 72], [11, 57], [16, 51], [31, 51], [36, 57], [36, 72]], PAL.ember[1]);
+    p.poly([[13, 71], [13, 59], [18, 55], [29, 55], [33, 59], [33, 71]], PAL.ember[4]);
+    for (let i = 0; i < 3; i++) {
+      const xx = 16 + i * 6;
+      p.poly([[xx - 2, 70], [xx, 59 + CYCLE[(frame + i) % 4] * 2], [xx + 3, 65], [xx + 4, 70]], PAL.ember[7]);
+    }
+    p.rect(18, 67, 10, 4, PAL.ember[9]);
+    p.rect(16, 58, 2, 15, r[1]); p.rect(29, 58, 2, 15, r[1]);
+    p.rect(7, 73, 35, 4, r[2]); p.rect(8, 73, 31, 1, r[5]);
+    p.rect(7, 54, 3, 16, r[5]); p.set(8, 54, PAL.gold[6]);
+    return;
+  }
+  p.poly([[2, 36], [3, 13], [8, 10], [12, 5], [19, 6], [21, 12], [52, 12], [53, 5], [60, 4], [63, 12], [62, 36]], r[2]);
+  p.rect(6, 14, 52, 21, r[4]); p.rect(6, 27, 52, 8, r[3]);
+  p.rect(7, 11, 49, 4, PAL.stone[2]); p.rect(8, 11, 48, 1, PAL.stone[5]);
+  for (const xx of [4, 29, 57]) {
+    p.rect(xx, 10, 4, 26, r[2]); p.rect(xx, 10, 2, 25, r[5]);
+    p.rect(xx - 1, 8, 6, 3, r[4]); p.rect(xx - 1, 8, 6, 1, r[6]);
+  }
+  p.line(11, 23, 27, 23, r[3]); p.line(34, 26, 56, 26, r[2]);
+  const ventX = variant % 2 ? 36 : 11;
+  p.rect(ventX - 1, 18, 15, 14, PAL.ember[1]); p.rect(ventX, 20, 12, 10, PAL.ember[3]);
+  p.rect(ventX + 1, 24, 10, 6, PAL.ember[5]); p.rect(ventX + 3, 27, 5, 3, PAL.ember[7]);
+  for (let i = 0; i < 3; i++) p.rect(ventX + 2 + i * 4, 18, 1, 13, r[1]);
+  const braceX = variant % 2 ? 11 : 36;
+  p.line(braceX, 31, braceX + 16, 17, PAL.stone[2]); p.line(braceX, 30, braceX + 15, 17, PAL.stone[5]);
+  p.set(braceX + 1, 29, PAL.gold[5]); p.set(braceX + 14, 18, PAL.gold[5]);
+  p.rect(2, 36, 60, 2, r[2]); p.rect(3, 35, 59, 1, r[5]);
+}
+
+function spireSanctum(p, d, state, frame) {
+  const x = d.ax, y = d.ay, gold = PAL.gold, stoneRamp = PAL.stone;
+  const sealed = state === 'sealed', restored = state === 'restored';
+  shadow(p, x, y, 44, 4);
+  p.rect(6, 95, 84, 7, stoneRamp[2]); p.rect(7, 94, 81, 2, stoneRamp[5]);
+  p.rect(11, 90, 74, 5, stoneRamp[3]); p.rect(12, 89, 71, 2, gold[4]);
+  p.rect(18, 84, 60, 5, stoneRamp[4]); p.rect(19, 83, 57, 2, gold[6]);
+  p.poly([[30, 83], [33, 40], [40, 31], [56, 31], [63, 40], [66, 83]], gold[2]);
+  p.poly([[34, 80], [36, 41], [41, 34], [54, 34], [60, 42], [62, 80]], gold[4]);
+  p.poly([[35, 41], [41, 34], [46, 34], [43, 79], [35, 81]], gold[6]);
+  p.poly([[54, 34], [60, 42], [62, 80], [55, 78]], gold[3]);
+  p.line(36, 40, 41, 34, gold[8]); p.line(35, 42, 35, 68, gold[7]);
+  p.line(37, 50, 37, 73, gold[5]); p.line(59, 48, 60, 74, gold[2]);
+  p.rect(34, 48, 5, 2, gold[5]); p.rect(34, 48, 4, 1, gold[7]);
+  p.rect(33, 73, 6, 3, gold[4]); p.rect(33, 73, 5, 1, gold[6]);
+  p.rect(58, 73, 5, 3, gold[3]); p.rect(58, 73, 4, 1, gold[5]);
+  p.poly([[40, 80], [40, 51], [46, 42], [51, 42], [57, 51], [57, 80]], PAL.night[1]);
+  for (const side of [-1, 1]) {
+    const xx = x + side * 29;
+    p.poly([[xx - 5, 87], [xx - 3, 57], [xx + 2, 48], [xx + 6, 59], [xx + 6, 86]], gold[3]);
+    p.poly([[xx - 4, 85], [xx - 2, 58], [xx + 1, 51], [xx + 1, 85]], gold[6]);
+    p.line(xx - 2, 57, xx + 1, 51, gold[8]);
+    p.poly([[x + side * 11, 53], [x + side * 29, 36], [x + side * 30, 21], [x + side * 36, 13], [x + side * 32, 35], [x + side * 18, 61]], gold[3]);
+    p.line(x + side * 12, 53, x + side * 28, 36, gold[6]);
+    p.line(x + side * 28, 36, x + side * 29, 22, gold[7]);
+    p.line(x + side * 29, 28, x + side * 38, 23, gold[5]);
+    p.line(x + side * 38, 23, x + side * 40, 17, gold[6]);
+    p.rect(xx - 2, 67, 4, 9, PAL.teal[sealed ? 2 : 4]);
+    p.rect(xx - 1, 69, 1, 5, PAL.teal[restored ? 7 : 5]);
+  }
+  crystal(p, x, 42, 20, 36, PAL.teal);
+  // Long refraction planes describe the crystal's volume without a dotted halo.
+  p.poly([[40, 13], [47, 8], [47, 24], [42, 32]], PAL.teal[6]);
+  p.poly([[48, 24], [55, 17], [55, 29], [49, 39]], PAL.teal[3]);
+  p.line(40, 14, 40, 25, PAL.teal[8]); p.line(42, 32, 46, 26, PAL.teal[7]);
+  p.line(49, 25, 53, 21, PAL.teal[5]);
+  p.poly([[x, 1], [x + 5, 7], [x, 12], [x - 5, 7]], gold[5]);
+  p.line(x - 4, 7, x, 2, gold[8]);
+  grid(p, 43, 55, 12, 22, sealed ? PAL.stone : PAL.teal, !sealed);
+  p.rect(40, 79, 18, 3, gold[3]); p.rect(40, 79, 17, 1, gold[6]);
+  if (!sealed) {
+    p.rect(42, 82, 13, 1, PAL.teal[restored ? 7 : 5]);
+    p.rect(44, 86, 9, 1, PAL.teal[restored ? 5 : 3]);
+  }
+  for (let i = 0; i < 7; i++) {
+    p.rect(22 + i * 8, 91, 3, 2, gold[restored ? 6 : 3]);
+    if (restored && (i + frame) % 4 === 0) p.set(22 + i * 8, 90, gold[8]);
+  }
+  if (sealed) {
+    p.poly([[42, 65], [47, 60], [54, 64], [54, 72], [48, 76], [42, 72]], PAL.violet[2]);
+    p.line(42, 65, 47, 60, PAL.violet[6]); p.rect(46, 65, 5, 6, PAL.violet[4]);
+    p.rect(47, 64, 3, 2, PAL.violet[6]); p.rect(48, 67, 1, 3, PAL.teal[6]);
+  } else if (frame === 1 || restored) {
+    sparkle(p, x - 5, 16 + CYCLE[frame], PAL.teal[8]);
+    if (restored) sparkle(p, 20, 55, gold[7]);
+  }
+}
+
+const ARCHITECTURE = new Set(['terrace-wall', 'terrace-stairs', 'archive-wall', 'archive-shelves', 'forge-stack', 'forge-wall', 'spire-sanctum']);
+
+function paintArchitecture(p, kind, d, biome, variant, state, frame) {
+  if (kind.startsWith('terrace-')) terrace(p, d, kind, biome, variant);
+  else if (kind.startsWith('archive-')) archiveArchitecture(p, d, kind, variant);
+  else if (kind.startsWith('forge-')) forgeArchitecture(p, d, kind, variant, frame);
+  else spireSanctum(p, d, state, frame);
+}
+
 function paintProp(p, kind, d, biome, variant, state, frame) {
   if (kind.startsWith('tree-')) drawTree(p, kind, d, biome, variant, frame);
   else if (kind.startsWith('house-')) house(p, d, kind, biome, variant);
@@ -476,22 +702,24 @@ function paintProp(p, kind, d, biome, variant, state, frame) {
   else if (kind === 'gridstone') gridstone(p, d, biome, state, frame);
   else if (kind.startsWith('shrine-')) shrine(p, d, Number(kind.slice(-1)), state, frame);
   else if (kind === 'gate') gate(p, d, frame);
+  else if (ARCHITECTURE.has(kind)) paintArchitecture(p, kind, d, biome, variant, state, frame);
   else smallProp(p, d, kind, biome, variant, state, frame);
 }
 
-const ANIMATED = new Set(['tree-oak', 'tree-pine', 'tree-palm', 'tree-willow', 'tree-crystal', 'lighthouse', 'gridstone', 'shard', 'campfire', 'furnace', 'gate', ...Array.from({ length: 7 }, (_, i) => `shrine-${i}`)]);
+const ANIMATED = new Set(['tree-oak', 'tree-pine', 'tree-palm', 'tree-willow', 'tree-crystal', 'lighthouse', 'gridstone', 'shard', 'campfire', 'furnace', 'forge-stack', 'spire-sanctum', 'gate', ...Array.from({ length: 7 }, (_, i) => `shrine-${i}`)]);
 
 /** (x,y) is ground contact. Additive opts: reduced freezes decorative animation;
  * progress (0..1) controls gate opening independently of t. Without progress, an
  * opening gate treats t as elapsed seconds and dissolves completely at 1.6 s.
- * stone-float state 'solved' rests level at its anchor; other states bob. */
+ * stone-float state 'solved' rests level at its anchor; other states bob.
+ * PROPS ground:true identifies walkable floor art to draw before Y-sorted actors. */
 export function drawProp(ctx, kind, x, y, { t = 0, variant = 0, biome = 'meadow', state = '', reduced = false, progress } = {}) {
   const d = PROPS[kind];
   if (!d) return;
   biome = BIOME[biome] ? biome : 'meadow';
   // A bounded four-variant/four-frame cache, even when map seeds are arbitrary.
   variant = typeof variant === 'number' ? mod(Math.floor(variant), 4) : mod(String(variant).split('').reduce((a, c) => a + c.charCodeAt(0), 0), 4);
-  const frame = reduced || !ANIMATED.has(kind) ? 0 : mod(Math.floor(t * (kind === 'gate' ? 7 : kind === 'campfire' || kind === 'furnace' ? 6 : 2.2)), 4);
+  const frame = reduced || !ANIMATED.has(kind) ? 0 : mod(Math.floor(t * (kind === 'gate' ? 7 : kind === 'campfire' || kind === 'furnace' || kind === 'forge-stack' ? 6 : 2.2)), 4);
   const sprite = spriteCache(`world:${kind}:${biome}:${variant}:${state}:${frame}`, d.w, d.h, (p) => paintProp(p, kind, d, biome, variant, state, frame));
   const xx = Math.round(x - d.ax), yy = Math.round(y - d.ay);
   if (kind === 'gate' && state === 'opening') {
@@ -508,9 +736,9 @@ export function drawProp(ctx, kind, x, y, { t = 0, variant = 0, biome = 'meadow'
     const lift = kind === 'stone-float' && state === 'solved' ? 0 : reduced ? 2 : 2 + Math.round(Math.sin(t * 2 + variant) * 1.5);
     ctx.drawImage(sprite, xx, yy - lift);
   } else ctx.drawImage(sprite, xx, yy);
-  if (!reduced && (kind.startsWith('house-') || kind === 'furnace')) {
+  if (!reduced && (kind.startsWith('house-') || kind === 'furnace' || kind === 'forge-stack')) {
     const smoke = spriteCache('world:chimney-smoke', 8, 8, (p) => { p.ellipseDither(4, 4, 4, 3, PAL.ash[6], 0.28); });
-    const chimneyX = kind === 'furnace' ? 12 : d.w - 12;
+    const chimneyX = kind === 'forge-stack' ? d.ax : kind === 'furnace' ? 12 : d.w - 12;
     for (let i = 0; i < 2; i++) {
       const age = mod(t * 4 + i * 6, 12);
       const alpha = ctx.globalAlpha;
@@ -524,7 +752,7 @@ export function drawProp(ctx, kind, x, y, { t = 0, variant = 0, biome = 'meadow'
 const NATURE = ['tree-oak', 'tree-pine', 'tree-palm', 'tree-willow', 'tree-dead', 'tree-crystal', 'bush', 'rock-s', 'rock-l', 'stump', 'mushroom', 'reeds', 'flowerbed'];
 const WORKSHOP = ['bookshelf', 'pillar', 'anvil', 'furnace', 'lantern', 'banner'];
 const COAST = ['campfire', 'tent', 'well', 'dock', 'boat', 'cache', 'lamp', 'sign', 'fence-h', 'fence-v'];
-export const PROP_GALLERY_PAGES = 16;
+export const PROP_GALLERY_PAGES = 22;
 
 export const galleries = {
   props(ctx, screen, t, page = 0) {
@@ -540,18 +768,28 @@ export const galleries = {
     if (index === 11) { title = 'Grid Stones / asleep → awake'; items = BIOMES.flatMap((b) => ['dormant', 'awake'].map((state) => ({ kind: 'gridstone', biome: b, state, label: `${b} ${state === 'awake' ? '+' : '-'}` }))); cols = portrait ? 4 : 8; }
     if (index >= 12 && index <= 14) { const state = ['sealed', 'open', 'restored'][index - 12]; title = `Seven sanctuaries / ${state}`; items = Array.from({ length: 7 }, (_, i) => ({ kind: `shrine-${i}`, biome: BIOMES[i + 1], state })); cols = portrait ? 2 : 4; biome = 'archives'; }
     if (index === 15) { title = 'Bits / bridges / lost relics'; items = [{ kind: 'gate', state: 'closed', label: 'gate sealed' }, { kind: 'gate', state: 'opening', label: 'dissolving' }, ...['shard', 'pedestal', 'stone-float', 'crystal-cluster', 'statue'].map((kind) => ({ kind }))]; cols = portrait ? 3 : 4; biome = 'spire'; }
+    if (index === 16) { title = 'Terraces / climb & rest'; items = [{ kind: 'terrace-wall', biome: 'heights', label: 'alpine ledge' }, { kind: 'terrace-stairs', biome: 'heights', label: 'snow steps' }, { kind: 'terrace-wall', biome: 'spire', label: 'spire ledge' }, { kind: 'terrace-stairs', biome: 'spire', label: 'spire steps' }]; cols = 2; biome = 'heights'; }
+    if (index === 17) { title = 'Archives / reading hall'; items = [{ kind: 'archive-wall', variant: 0, label: 'lit hall wall' }, { kind: 'archive-wall', variant: 1, label: 'broken window' }, { kind: 'archive-shelves', variant: 0, label: 'shelf row A' }, { kind: 'archive-shelves', variant: 1, label: 'shelf row B' }]; cols = 2; biome = 'archives'; }
+    if (index === 18) { title = 'Forge / the work yard'; items = [{ kind: 'forge-stack', label: 'furnace stack' }, { kind: 'forge-wall', label: 'yard wall' }]; cols = 2; biome = 'forge'; }
+    if (index >= 19) { const state = ['sealed', 'open', 'restored'][index - 19]; title = `Precision sanctum / ${state}`; items = [{ kind: 'spire-sanctum', state, label: state }]; cols = 1; biome = 'spire'; }
     const rows = Math.ceil(items.length / cols), cw = Math.floor(screen.w / cols), ch = Math.floor((screen.h - 44) / rows);
     ctx.fillStyle = PAL.night[1]; ctx.fillRect(0, 0, screen.w, screen.h);
     drawText(ctx, title, 8, 7, { color: PAL.cream[2] });
     items.forEach((item, i) => {
       const col = i % cols, row = Math.floor(i / cols), xx = col * cw, yy = 25 + row * ch;
+      let anchor = yy + ch - 15;
+      if (index >= 16) {
+        let tallest = 0;
+        for (let j = row * cols; j < Math.min(items.length, (row + 1) * cols); j++) tallest = Math.max(tallest, PROPS[items[j].kind].ay);
+        anchor = yy + Math.floor((ch - 16 + tallest) / 2);
+      }
+      const floorY = index >= 16 ? anchor - 5 : yy + ch - 20;
       const ground = PAL[BIOME[item.biome ?? biome].ground];
       ctx.fillStyle = PAL.night[2]; ctx.fillRect(xx + 2, yy, cw - 4, ch - 4);
-      ctx.fillStyle = ground[2]; ctx.fillRect(xx + 3, yy + ch - 20, cw - 6, 10);
-      ctx.fillStyle = ground[3]; ctx.fillRect(xx + 3, yy + ch - 20, cw - 6, 1);
-      const anchor = yy + ch - 15;
+      ctx.fillStyle = ground[2]; ctx.fillRect(xx + 3, floorY, cw - 6, 10);
+      ctx.fillStyle = ground[3]; ctx.fillRect(xx + 3, floorY, cw - 6, 1);
       drawProp(ctx, item.kind, xx + Math.floor(cw / 2), anchor, { t, biome, ...item, progress: item.state === 'opening' ? mod(t, 2.2) / 2.2 : undefined });
-      drawText(ctx, item.label ?? item.kind.replace('tree-', '').replace('house-', 'house '), xx + Math.floor(cw / 2), yy + ch - 10, { font: 'small', color: PAL.ui.dim, align: 'center' });
+      drawText(ctx, item.label ?? item.kind.replace('tree-', '').replace('house-', 'house '), xx + Math.floor(cw / 2), index >= 16 ? anchor + 6 : yy + ch - 10, { font: 'small', color: PAL.ui.dim, align: 'center' });
     });
   },
 };

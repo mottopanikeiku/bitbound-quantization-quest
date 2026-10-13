@@ -7,6 +7,7 @@ import {
   packetBytes,
   dot,
 } from '../quantization.js';
+import { weightedVectors } from './metrics.js';
 
 const BITS = [2, 3, 4, 8];
 const clamp01 = (value) => Math.max(0, Math.min(1, value));
@@ -128,11 +129,11 @@ function prepare(essence, rawGear, locks) {
     addGroup(rows.map((_, i) => i), rows.length === 1 ? rows[0].label : 'Shared ruler', gear.bits);
   }
   if (essence.hidden && Array.isArray(essence.ghosts) && groups.length === 1) {
-    // A lock sees past samples, never the hidden wave. Calibration changes only
-    // the information used to choose the lock, not reconstruction or damage.
-    const archive = gear.calib || !essence.archive
-      ? essence.ghosts
-      : [...essence.archive.calm, ...essence.archive.storm];
+    // Both archives are always public. Neither the forecast nor the hidden
+    // current values may silently pick a different lock domain or default.
+    const archive = essence.archive
+      ? [...essence.archive.calm, ...essence.archive.storm]
+      : essence.ghosts;
     const values = archive.filter((_, i) => !kept.has(i % rows[0].values.length));
     Object.assign(groups[0], { values, ...bounds(values) });
   }
@@ -142,6 +143,24 @@ function prepare(essence, rawGear, locks) {
 /** Range-lock groups AFTER Balance and removal of Spotlight values from fitting. */
 export function rangeTargets(essence, gear, locks = {}) {
   return prepare(essence, gear, locks).groups.map(({ label, values, amax, min, max }) => ({ label, values, amax, min, max }));
+}
+
+/**
+ * The actual reachable breathing intervals, shared by UI and acceptance search.
+ * Brine uses one absolute ruler on every turn, not a forecast-sized oracle.
+ */
+export function lockDomains(essence, gear, locks = {}) {
+  return rangeTargets(essence, gear, locks).map((target) => {
+    if (essence.hidden) return { r: [0.15, 2.4], lo: [-2.4, 0], hi: [0, 2.4] };
+    const amplitude = target.amax || 1;
+    const low = Math.min(0, target.min);
+    const high = Math.max(0, target.max);
+    return {
+      r: [0.35 * amplitude, 1.45 * amplitude],
+      lo: [low - 0.55 * amplitude, Math.min(0, low + 0.55 * amplitude)],
+      hi: [Math.max(0, high - 0.55 * amplitude), high + 0.55 * amplitude],
+    };
+  });
 }
 
 function coveringLocks(state) {
@@ -246,19 +265,8 @@ export function buildSpell(essence, rawGear, locks = {}, power = 16, floor = 0.6
     const rebuiltWeights = rows[state.weightRow].recon;
     reconstructed = state.inputs.map((token, i) => dot(state.quantizeInputs ? rows[i].recon : token, rebuiltWeights));
   } else {
-    reference = [];
-    reconstructed = [];
-    if (essence.sensitivities) headFidelities = [];
-    for (let r = 0; r < rows.length; r++) {
-      const row = rows[r];
-      // Sensitivities weight squared error and signal energy, not the damage rule.
-      const importance = essence.sensitivities ? Math.sqrt(Math.max(0, essence.sensitivities[r] ?? 1)) : 1;
-      if (headFidelities) headFidelities.push(fidelity(row.values, row.recon));
-      for (let i = 0; i < row.values.length; i++) {
-        reference.push(row.values[i] * importance);
-        reconstructed.push(row.recon[i] * importance);
-      }
-    }
+    ({ reference, reconstructed } = weightedVectors(rows, essence.sensitivities));
+    if (essence.sensitivities) headFidelities = rows.map((row) => fidelity(row.values, row.recon));
   }
   const f = fidelity(reference, reconstructed);
   let result = damageFor(f, power, floor);
@@ -284,7 +292,7 @@ export function buildSpell(essence, rawGear, locks = {}, power = 16, floor = 0.6
     ...result,
     clippedCount,
     rows,
-    view: viewMin === viewMax ? { min: -1, max: 1 } : { min: viewMin, max: viewMax },
+    view: essence.hidden ? { min: -2.4, max: 2.4 } : viewMin === viewMax ? { min: -1, max: 1 } : { min: viewMin, max: viewMax },
     reference,
     reconstructed,
     metric: state.driven ? 'output' : essence.sensitivities ? 'sensitivity-weighted values' : 'values',

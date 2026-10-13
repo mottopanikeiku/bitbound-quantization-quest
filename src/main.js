@@ -18,6 +18,9 @@ async function applyDevRoute(params) {
     return state;
   };
   game.saving = !params.has('nosave');
+  // Shortcut routes skip the title's Enter; their first real key press starts audio instead.
+  const skipsTitle = params.has('zone') || params.has('battle') || ['intro', 'ending'].includes(params.get('scene'));
+  if (skipsTitle) addEventListener('keydown', () => game.startAudio(), { once: true, capture: true });
   if (params.has('gallery')) {
     const { GalleryScene } = await import('./scenes/gallery.js');
     game.scene = new GalleryScene(game, params.get('gallery'));
@@ -40,12 +43,16 @@ async function applyDevRoute(params) {
     game.state = progressed(friends, Math.max(friends, zone + 1));
     game.worldScene.reset();
     game.scene = game.battleScene;
+    game.setMusicScene(guardian ? 'boss' : 'battle');
     game.battleScene.enter({ foeId, guardian: Boolean(guardian), uid: `dev-${foeId}`, zone });
     return;
   }
   const scene = params.get('scene');
   if (scene === 'intro') game.scene = game.introScene;
-  else if (scene === 'ending') game.scene = game.endingScene;
+  else if (scene === 'ending') {
+    game.scene = game.endingScene;
+    game.setMusicScene('ending');
+  }
   game.scene.enter?.({});
 }
 

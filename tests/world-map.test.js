@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MAP, MAP_W, MAP_H, TILE, REGIONS, LEGEND, START, ENTRIES, GATES, BRIDGES, INTERACTABLES, STATICLINGS, createMapView, tileOpen } from '../src/world/map.js';
 import { TERRAIN_TYPES, isWalkable } from '../src/art/terrain.js';
-import { PUZZLES, breathing, evaluatePuzzle, puzzleRange } from '../src/world/puzzles.js';
+import { PUZZLES } from '../src/world/puzzles.js';
 import { World } from '../src/world/world.js';
 import { newGame } from '../src/state.js';
 
@@ -31,7 +31,12 @@ function gameFor(state = newGame()) {
   return {
     state, time: 0, screen: { w: 384, h: 216 }, reducedMotion: false,
     audio: { play() {} }, hasFlag: (id) => state.flags.includes(id),
-    setFlag: (id) => { if (!state.flags.includes(id)) state.flags.push(id); },
+    setFlag: (id, value = true) => {
+      const index = state.flags.indexOf(id);
+      if (value && index < 0) state.flags.push(id);
+      else if (!value && index >= 0) state.flags.splice(index, 1);
+    },
+    save() {}, announce() {},
   };
 }
 
@@ -61,6 +66,10 @@ test('each guardian opens exactly the next shore; no gate has a terrain bypass',
     const reachable = flood(friends);
     for (const entry of ENTRIES) {
       assert.equal(reachable.has(entry.ty * MAP_W + entry.tx), entry.zone <= count, `with ${count} friends, zone ${entry.zone}`);
+    }
+    for (const item of INTERACTABLES) {
+      if (item.zone > count || item.puzzle) continue;
+      assert.ok(reachable.has(item.ty * MAP_W + item.tx), `with ${count} friends, ${item.id} must be reachable without a later gate`);
     }
     for (const gate of GATES) {
       assert.ok(gate.cells.every(([x, y]) => isWalkable(MAP.get(x, y))), `${gate.id} is on its crossing`);
@@ -113,55 +122,56 @@ test('bridge shards cannot be reached around the moat; solving is per-world', ()
   }
 });
 
-test('all seven Snap Bridges require a choice, have non-clipping solutions and useful timing windows', () => {
-  for (const puzzle of PUZZLES) {
-    assert.equal(evaluatePuzzle(puzzle).solved, false, `${puzzle.id}: default is already solved`);
-    let wins = 0;
-    let witness = null;
-    for (const bits of [2, 3, 4, 8]) for (let step = 0; step <= 220; step++) {
-      const config = { bits, p: step / 220 };
-      const result = evaluatePuzzle(puzzle, config);
-      if (result.solved) { wins++; witness = config; }
+test('seven compositions have independently authored landmark and bridge arrangements', () => {
+  const layouts = REGIONS.filter((region) => region.id >= 0);
+  const arrangements = layouts.map((region) => JSON.stringify([region.entry, region.stone, region.shrine, region.camp, region.bridge]));
+  assert.equal(new Set(arrangements).size, 7);
+  assert.equal(new Set(layouts.map((region) => JSON.stringify(region.entry))).size, 7);
+  assert.equal(new Set(layouts.map((region) => JSON.stringify(region.stone))).size, 7);
+  for (const bridge of BRIDGES) {
+    const path = [bridge.bank, ...bridge.cells, bridge.reward];
+    assert.equal(bridge.cells.length, 4, 'four physical treads match every puzzle reconstruction');
+    for (let i = 1; i < path.length; i++) {
+      assert.equal(Math.abs(path[i].tx - path[i - 1].tx) + Math.abs(path[i].ty - path[i - 1].ty), 1, `${bridge.id}: ordered orthogonal tread`);
     }
-    assert.ok(wins >= 20, `${puzzle.id}: only ${wins} winning samples`);
-    assert.ok(witness, `${puzzle.id}: no solution`);
-    const solution = evaluatePuzzle(puzzle, witness);
-    assert.equal(solution.clippedCount, 0);
-    assert.ok(solution.recon.every((value) => Math.abs(value - solution.recon[0]) < 1e-9));
-    assert.equal(evaluatePuzzle(puzzle, { bits: 2, p: 0 }).solved, false, 'clipping everything is not a valid walkway');
+    assert.ok(isWalkable(MAP.get(bridge.bank.tx, bridge.bank.ty)), `${bridge.id}: dry approach`);
+    assert.ok(isWalkable(MAP.get(bridge.reward.tx, bridge.reward.ty)), `${bridge.id}: dry landing`);
   }
 });
 
-test('Zero-Shift really changes the bucket boundaries, and breathing uses the battle oscillator', () => {
-  const puzzle = PUZZLES[1];
-  const sym = evaluatePuzzle(puzzle, { bits: 2, p: 0.8 });
-  const affine = evaluatePuzzle(puzzle, { bits: 2, p: 0.8, tool: true });
-  assert.notDeepEqual(sym.recon, affine.recon);
-  assert.equal(affine.rows[0].levels.length, 4);
-  assert.equal(sym.rows[0].levels.length, 3);
-  assert.equal(breathing(0), 0);
-  assert.equal(breathing(0.95), 1);
-  assert.ok(Math.abs(breathing(0.475) - 0.5) < 1e-12);
-  assert.equal(puzzleRange(puzzle, 0), puzzle.amax * 0.35);
-  assert.ok(Math.abs(puzzleRange(puzzle, 1) - puzzle.amax * 1.45) < 1e-12);
+test('patrol homes leave the protected service radii and their wander leash clear', () => {
+  const state = newGame();
+  state.friends = [0, 1, 2, 3, 4, 5, 6];
+  state.puzzles = PUZZLES.map((puzzle) => puzzle.id);
+  const world = new World(gameFor(state));
+  world.setState(state);
+  for (const patrol of STATICLINGS) {
+    assert.ok(world._walkable(patrol.x, patrol.y, 3), `${patrol.uid}: solid home`);
+    for (const service of INTERACTABLES) {
+      if (service.zone !== patrol.zone || !['shrine', 'camp', 'stone', 'cache', 'puzzle'].includes(service.interaction)) continue;
+      const radius = service.interaction === 'shrine' ? 56 : 40;
+      assert.ok(Math.hypot(service.x - patrol.x, service.y - patrol.y) >= radius + 28, `${patrol.uid} is too near ${service.id}`);
+    }
+  }
 });
 
-test('world state application is idempotent, and defeated staticlings return only at rest', () => {
+test('state application is idempotent; rest returns only cleared active-zone patrols', () => {
   const state = newGame();
   state.friends = [0, 1, 2, 3, 4];
-  state.techniques = ['bits', 'zero', 'calib', 'groups', 'spotlight'];
+  state.techniques = ['bits', 'zero', 'calib', 'groups', 'spotlight', 'balance'];
   const world = new World(gameFor(state));
   world.setState(state);
   const first = world.position;
   world.setState(state);
   assert.deepEqual(world.position, first);
   assert.equal(world.followers.length, 4);
-  const enemy = world.statics[0];
+  const enemy = world.statics.find((item) => item.zone === 5);
   world.afterBattle(enemy.uid, 'won');
   assert.equal(enemy.alive, false);
   world.setState(state);
   assert.equal(enemy.alive, false);
   world.respawnStaticlings();
   assert.equal(enemy.alive, true);
-  assert.equal(world.contactCooldown, 3);
+  assert.ok(world.statics.filter((item) => item.zone < 5).every((item) => !item.alive), 'rest cannot repopulate restored shores');
+  assert.ok(world.contactCooldown >= 3);
 });

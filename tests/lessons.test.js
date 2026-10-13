@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LESSONS, GLOSSARY, REAL_WORLD, FACTS, COACH, SOURCES } from '../src/content/lessons.js';
-import { GUARDIANS, TECHNIQUE_ORDER, TECHNIQUES, ZONES } from '../src/content/game-data.js';
+import { GUARDIANS, TECHNIQUE_ORDER, TECHNIQUES, ZONES, heroStats } from '../src/content/game-data.js';
 import { kvCacheBytes } from '../src/quantization.js';
+import { Battle } from '../src/battle/battle.js';
+import { newGame } from '../src/state.js';
 
 const lessonFields = ['id', 'title', 'technique', 'icon', 'lines', 'formula', 'real', 'recap', 'diagramCaption'];
-const coachKeys = ['intro', 'firstSnap', 'fizzle', 'clipped', 'perfect', 'technique', 'lowBytes', 'guard', 'charge', 'win'];
+const coachKeys = ['intro', 'firstSnap', 'fizzle', 'clipped', 'perfect', 'clippedPerfect', 'technique', 'lowBytes', 'guard', 'charge', 'win'];
 const coachExtras = {
   brine: ['storm', 'calm'],
   spindle: ['thinThread'],
@@ -36,6 +38,33 @@ function close(actual, expected, name) {
   assert.ok(Math.abs(actual - expected) <= Math.max(1, Math.abs(expected)) * 1e-12,
     `${name}: expected ${expected}, got ${actual}`);
 }
+
+function coachBattle(id, zone, learned = true) {
+  const state = newGame();
+  state.friends = Array.from({ length: zone }, (_, i) => i);
+  state.techniques = TECHNIQUE_ORDER.slice(0, zone + Number(learned));
+  state.gear = { ...state.gear, bits: 4, spotlight: 0, budget: null };
+  const limits = heroStats(state);
+  state.hero = { hp: limits.maxHp, bytes: limits.maxBytes, snacks: 3 };
+  const game = { state, stats: () => limits, reducedMotion: true, screen: { w: 384, h: 216 }, input: { lastDevice: 'keyboard' } };
+  return new Battle({ game, foeId: id, guardian: !id.startsWith('static'), zone, uid: 'coach-' + id });
+}
+
+function press(battle, key) {
+  const keys = new Set([key]);
+  battle.update(0.02, {
+    pressed: action => keys.has(action), repeat: action => keys.has(action), held: () => false,
+    consume: action => keys.delete(action), pressTime: () => performance.now(),
+  });
+}
+
+function command(battle, index) {
+  assert.equal(battle.phase, 'menu');
+  battle.menu = index;
+  press(battle, 'confirm');
+}
+
+const plain = text => text.replace(/\*/g, '');
 
 test('the seven lessons preserve the complete public data shape', () => {
   assert.deepEqual(Object.keys(LESSONS).sort(), [...TECHNIQUE_ORDER].sort());
@@ -99,6 +128,120 @@ test('coach technique hints refer to the matching zone mechanic', () => {
   assert.match(COACH.cinder.hot, /matching weights/);
   assert.match(COACH.vesper.outlier, /matching weight/);
   assert.match(COACH.auric.phase2, /SCAN.*retune/);
+});
+
+test('first-grid and PERFECT copy explain reconstruction without claiming lossless snaps', () => {
+  const first = 'White dots are true values; lines are the levels. Red tethers show what the snap lost.';
+  assert.equal(COACH.nib.firstSnap, first);
+  assert.equal(COACH['static-0'].firstSnap, first);
+  assert.match(COACH.nib.perfect, /at least 98\.5% fidelity, not lossless/);
+  for (const [id, coach] of Object.entries(COACH)) {
+    assert.match(coach.clippedPerfect, /PERFECT.*tiny clipping.*error budget/, id);
+    assert.doesNotMatch(coach.clippedPerfect, /widen|mistake|failed/i, id);
+  }
+});
+
+test('Groups declares separate damage and an all-three PERFECT threshold', () => {
+  const copy = plain(LESSONS.groups.lines.join(' '));
+  assert.match(copy, /Each thread gets a third of the power/);
+  assert.match(copy, /its own fidelity decides its damage/);
+  assert.match(copy, /PERFECT.*all three threads at 98\.5%.*not lossless/);
+  assert.match(COACH.spindle.firstSnap, /third of the power.*own F and D.*not the overall/);
+  assert.match(COACH.spindle.perfect, /all three threads at 98\.5%/);
+  assert.match(COACH.spindle.technique, /3-bit.*Group Rulers.*new bends.*4 bits/);
+});
+
+test('calibration copy keeps past regimes, a fixed ruler and uncertain future inputs distinct', () => {
+  const copy = plain(LESSONS.calib.lines.join(' '));
+  assert.match(copy, /past calm and storm waves/);
+  assert.match(copy, /fixed ±2\.4 ruler.*last lock stays visible/);
+  assert.match(copy, /tighter range for calm.*wider one for storms.*steps coarser/);
+  assert.match(copy, /90% of past calm values fit.*not a guarantee/);
+  assert.match(COACH.brine.technique, /both past regimes.*choose the range, not the ruler/);
+  assert.doesNotMatch(COACH.brine.perfect, /Good forecast/);
+  assert.match(COACH.chime.technique, /4 bits.*Zero-Shift.*16 codes/);
+});
+
+test('Balance coaching adapts the bit choice when the matched products change', () => {
+  assert.match(COACH.vesper.intro, /both partners for outliers.*Balance.*TUNE.*SNAP/);
+  assert.match(COACH.vesper.technique, /2-bit.*Balance.*0\.5.*products change.*3 bits/);
+  assert.match(COACH.vesper.outlier, /each input and matching weight.*raw products stay unchanged/);
+});
+
+test('Spotlight instructions follow real SCAN numbers, TUNE count and SNAP selection affordances', () => {
+  for (const id of ['cinder', 'static-4']) {
+    const copy = plain(COACH[id].technique);
+    assert.match(copy, /TUNE Spotlight to 2, then SNAP and choose the two hottest channels/);
+    assert.match(plain(COACH[id].intro), /SCAN.*hot channel numbers/);
+    assert.doesNotMatch(plain(COACH[id].intro), /SCAN.*bars/);
+    const battle = coachBattle(id, 4);
+    command(battle, 4);
+    assert.equal(battle.phase, 'scan');
+    const hot = battle.salience.map((value, index) => ({ value, index }))
+      .sort((a, b) => b.value - a.value || a.index - b.index).slice(0, 2).map(item => item.index);
+    const numbers = battle.scanLines.find(line => /Hot channels:/.test(line));
+    assert.ok(numbers, `${id}: SCAN supplies channel numbers`);
+    for (const index of hot) assert.match(numbers, new RegExp(`\\b${index + 1}\\b`));
+    press(battle, 'cancel');
+    command(battle, 1);
+    assert.equal(battle.phase, 'tune');
+    battle.tuneIndex = battle.tuneItems.findIndex(item => item.key === 'spotlight');
+    assert.ok(battle.tuneIndex >= 0);
+    press(battle, 'right');
+    press(battle, 'right');
+    assert.equal(battle.gear.spotlight, 2, 'TUNE sets only the number kept');
+    assert.equal(battle.phase, 'tune', 'TUNE does not open the channel picker');
+    press(battle, 'cancel');
+    command(battle, 0);
+    assert.equal(battle.phase, 'spotlight', 'SNAP opens the actual channel picker');
+    assert.deepEqual(battle.locks.protected, []);
+    for (const index of hot) {
+      for (let steps = 0; battle.pickIndex !== index && steps < battle.salience.length; steps++) press(battle, 'right');
+      assert.equal(battle.pickIndex, index);
+      press(battle, 'confirm');
+      assert.ok(battle.locks.protected.includes(index));
+    }
+    assert.equal(battle.phase, 'lock', 'range follows the two channel choices');
+  }
+  assert.match(plain(LESSONS.spotlight.lines.join(' ')), /TUNE Spotlight to 2, then SNAP.*SCAN shows their numbers/);
+});
+
+test('Bit Budget copy points to SNAP, not TUNE, for individual head bit controls', () => {
+  for (const id of ['auric', 'static-6']) {
+    assert.match(plain(COACH[id].technique), /TUNE Bit Budget ON, then SNAP.*per-head bits/);
+    const battle = coachBattle(id, 6);
+    command(battle, 1);
+    battle.tuneIndex = battle.tuneItems.findIndex(item => item.key === 'budget');
+    assert.ok(battle.tuneIndex >= 0);
+    press(battle, 'right');
+    assert.equal(battle.phase, 'tune');
+    assert.deepEqual(battle.gear.budget, [4, 3, 2]);
+    press(battle, 'cancel');
+    command(battle, 0);
+    assert.equal(battle.phase, 'budget');
+    press(battle, 'right');
+    assert.deepEqual(battle.gear.budget, [8, 3, 2], 'SNAP edits the selected head');
+    press(battle, 'down');
+    press(battle, 'left');
+    assert.deepEqual(battle.gear.budget, [8, 2, 2], 'SNAP can select and edit a different head');
+  }
+  assert.match(plain(LESSONS.budget.lines.join(' ')), /Bit Budget.*TUNE, then SNAP to choose each head/);
+});
+
+test('pre-stone practice coaches make their unavailable technique conditional', () => {
+  for (let zone = 0; zone < TECHNIQUE_ORDER.length; zone++) {
+    const id = `static-${zone}`;
+    const battle = coachBattle(id, zone, false);
+    assert.ok(!battle.tuneItems.some(item => item.key === TECHNIQUE_ORDER[zone]), `${id}: its stone is not learned`);
+    assert.match(COACH[id].technique, /[Ii]f.*learned|when learned|[Oo]nce.*learned/, `${id}: no unavailable control is commanded`);
+    if (zone === 0) {
+      assert.equal(battle.gear.bits, 4, 'the first practice grid already has four bits');
+      assert.match(COACH[id].intro, /Choose SNAP, then lock the 4-bit bracket/);
+      assert.match(COACH[id].lowBytes, /GUARD.*once Bit Dial is learned, TUNE/);
+    } else {
+      assert.ok(battle.tuneItems.some(item => item.key === 'bits'), `${id}: Bit Dial remains available`);
+    }
+  }
 });
 
 test('all eight areas have 3-5 short NPC facts', () => {

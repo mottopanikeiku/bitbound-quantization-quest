@@ -230,9 +230,67 @@ export function drawPortrait(ctx, id, x, y, opts = {}) {
   });
   ctx.drawImage(canvas, Math.round(x), Math.round(y));
 }
+
+function oracleCore(p, frame, blink, glow) {
+  if (glow) {
+    p.ellipseDither(16, 16, 15, 15, PAL.teal[4], .08 + glow * .065);
+    p.ellipseDither(15, 14, 13, 13, PAL.teal[6], .06 + glow * .035);
+  }
+  // The upper and left faces receive LIGHT; the right face keeps the crystal's
+  // darker teal. No portrait backdrop, outer frame, or black rectangular edge.
+  face(p, [[4, 10], [16, 17], [16, 29], [6, 23]], PAL.teal, .55, false);
+  face(p, [[16, 17], [28, 10], [26, 23], [16, 29]], PAL.teal, .29, false);
+  face(p, [[16, 3], [28, 10], [16, 17], [4, 10]], PAL.teal, .83, false);
+  path(p, [[4, 10], [16, 3], [28, 10]], PAL.teal[9]);
+  path(p, [[4, 10], [16, 17], [28, 10], [26, 23], [16, 29], [6, 23], [4, 10]], PAL.teal[7]);
+  p.line(16, 17, 16, 29, PAL.teal[8]);
+  path(p, [[5, 14], [16, 21], [27, 14]], PAL.teal[6]);
+  path(p, [[5, 19], [16, 25], [26, 19]], PAL.teal[5]);
+  p.line(9, 13, 10, 25, PAL.teal[8]); p.line(22, 14, 21, 26, PAL.teal[6]);
+  path(p, [[10, 7], [22, 14], [21, 26]], PAL.teal[7]);
+  path(p, [[22, 7], [10, 14], [10, 25]], PAL.teal[8]);
+  p.line(6, 10, 15, 5, PAL.cream[3]);
+  p.rect(14, 9, 3, 3, PAL.gold[7]); p.set(15, 8, PAL.cream[3]);
+  for (const x of [11, 21]) {
+    p.rect(x - 1, 17, 3, 5, PAL.teal[2]);
+    if (blink) p.line(x - 1, 19, x + 1, 19, PAL.gold[6]);
+    else { p.rect(x, 18, 2, 3, PAL.gold[6]); p.set(x, 18, PAL.cream[3]); }
+  }
+  path(p, [[14, 23], [16, 24], [18, 23]], PAL.gold[7]);
+  if (glow) {
+    const spark = [[6, 10], [9, 8], [12, 6], [16, 3], [19, 5], [22, 7], [25, 9], [27, 10]][frame];
+    p.set(spark[0], spark[1], PAL.cream[3]);
+    if (glow > 1) { p.set(16, 1, PAL.teal[8]); p.set(16, 2, PAL.cream[3]); }
+    if (glow > 2) { p.set(2, 16, PAL.teal[7]); p.set(30, 13, PAL.teal[6]); }
+  }
+}
+
+/** Unframed 32×32 lattice entity, TOP-LEFT anchor with a transparent surround.
+ * glow is 0–1 (halo/reflection strength, not opacity); t is seconds. */
+export function drawOracleCore(ctx, x, y, { t = 0, glow = 1 } = {}) {
+  const light = Math.round(Math.max(0, Math.min(1, glow)) * 3), frame = Math.floor(t * 4) % 8;
+  const blink = Math.floor(t * 8) % 41 === 0;
+  const canvas = spriteCache(`oracle-core:${frame}:${+blink}:${light}`, 32, 32, (p) => oracleCore(p, frame, blink, light));
+  ctx.drawImage(canvas, Math.round(x), Math.round(y));
+}
 function portraitsGallery(ctx, screen, t, page = 0) {
-  const ids = PORTRAIT_IDS.slice((page % 6) * 3, (page % 6) * 3 + 3), portrait = screen.w < 300;
+  const pageId = page % 7, ids = PORTRAIT_IDS.slice(pageId * 3, pageId * 3 + 3), portrait = screen.w < 300;
   ctx.fillStyle = PAL.night[1]; ctx.fillRect(0, 0, screen.w, screen.h);
+  if (pageId === 6) {
+    drawText(ctx, 'Light without a frame', 8, 6, { color: PAL.cream[3] });
+    drawText(ctx, 'Native 32 x 32 / transparent surround', 8, 19, { font: 'small', color: PAL.ui.dim });
+    [0, .5, 1].forEach((glow, i) => {
+      const x = Math.round(screen.w * (i + .5) / 3), y = portrait ? 78 : 66;
+      drawOracleCore(ctx, x - 16, y, { t, glow });
+      drawText(ctx, `GLOW ${glow}`, x, y + 39, { font: 'small', color: PAL.gold[6], align: 'center' });
+    });
+    [PAL.night[3], PAL.teal[2], PAL.sky[4]].forEach((color, i) => {
+      const x = Math.round(screen.w * (i + .5) / 3), y = portrait ? 204 : 143;
+      ctx.fillStyle = color; ctx.fillRect(x - 24, y - 8, 48, 48);
+      drawOracleCore(ctx, x - 16, y, { t: t + i * .6 });
+    });
+    return;
+  }
   drawText(ctx, 'Faces, feelings & a little light', 8, 6, { color: PAL.cream[3] });
   drawText(ctx, 'Native 40 x 40 / neutral, happy, worried', 8, 19, { font: 'small', color: PAL.ui.dim });
   ids.forEach((id, i) => {

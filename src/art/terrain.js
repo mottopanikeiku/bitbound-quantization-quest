@@ -11,7 +11,16 @@ const GREEN = new Set(['grass', 'tallgrass', 'flowers']);
 const WET = new Set(['water', 'deep']);
 const RAMPS = Object.fromEntries(Object.entries(PAL).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [k, v.map(u32)]));
 const WORN_PATH = RAMPS.dirt.map((c, i) => u32(mix(c, RAMPS.dirt[Math.max(0, i - 1)], 0.38)));
-const TEXTURE = new Map(Object.values(RAMPS).map((r) => [r, r.map((c, i) => [
+// Floors carry the scene; their small value range leaves the bright/dark limits
+// to raised architecture and interactables. All tones mix neighbouring ramps.
+const closeRamp = (r, dark, stops) => stops.map((v) => u32(mix(r[dark], r[dark + 1], v)));
+const FLOOR_STONE = closeRamp(RAMPS.stone, 3, [0.2, 0.36, 0.46, 0.64]);
+const FLOOR_FROST = closeRamp(RAMPS.snow, 1, [0.23, 0.38, 0.5, 0.62]);
+const FLOOR_ASH = closeRamp(RAMPS.ash, 3, [0.16, 0.3, 0.42, 0.6]);
+const FLOOR_WOOD = closeRamp(RAMPS.wood, 2, [0.5, 0.64, 0.77, 0.94]);
+const BRIDGE_WOOD = closeRamp(RAMPS.wood, 3, [0.1, 0.32, 0.57, 0.84]);
+const FLOOR_CRYSTAL = closeRamp(RAMPS.teal, 2, [0, 0.16, 0.29, 0.46, 0.61]);
+const TEXTURE = new Map([...Object.values(RAMPS), FLOOR_CRYSTAL].map((r) => [r, r.map((c, i) => [
   u32(mix(c, r[Math.max(0, i - 1)], 0.45)), c,
   u32(mix(c, r[Math.min(r.length - 1, i + 1)], 0.38)),
 ])]));
@@ -32,7 +41,7 @@ function rampFor(type, biome) {
   if (type === 'ash') return RAMPS.ash;
   if (type === 'lava') return RAMPS.ember;
   if (type === 'snow') return RAMPS.snow;
-  if (type === 'crystal') return RAMPS.teal;
+  if (type === 'crystal') return FLOOR_CRYSTAL;
   if (type === 'plank') return RAMPS.wood;
   if (type === 'void') return RAMPS.night;
   return biome === 'forge' ? RAMPS.ash : RAMPS.stone;
@@ -91,38 +100,35 @@ function clippedSlab(p, color, left, top) {
   }
 }
 
-function flagstones(p, wx, wy, px, py, ramp, biome, ruined) {
-  p.rect(px, py, 16, 16, biome === 'heights' ? RAMPS.snow[2] : ramp[2]);
+function flagstones(p, wx, wy, px, py, biome, ruined) {
+  const floor = biome === 'heights' ? FLOOR_FROST : biome === 'forge' ? FLOOR_ASH : FLOOR_STONE;
+  const sx = biome === 'heights' ? 36 : 32, sy = biome === 'heights' ? 30 : 26;
+  p.rect(px, py, 16, 16, floor[0]);
   const offX = px - wx, offY = py - wy;
-  for (let gy = Math.floor((wy - 6) / 17); gy <= Math.floor((wy + 21) / 17); gy++) {
-    for (let gx = Math.floor((wx - 6) / 18); gx <= Math.floor((wx + 21) / 18); gx++) {
-      const ax = gx * 18 + hash2(gx, gy, 201) * 10 - 5 + offX;
-      const ay = gy * 17 + hash2(gx, gy, 202) * 10 - 5 + offY;
-      const bx = (gx + 1) * 18 + hash2(gx + 1, gy, 201) * 10 - 5 + offX;
-      const by = gy * 17 + hash2(gx + 1, gy, 202) * 10 - 5 + offY;
-      const cx = (gx + 1) * 18 + hash2(gx + 1, gy + 1, 201) * 10 - 5 + offX;
-      const cy = (gy + 1) * 17 + hash2(gx + 1, gy + 1, 202) * 10 - 5 + offY;
-      const dx = gx * 18 + hash2(gx, gy + 1, 201) * 10 - 5 + offX;
-      const dy = (gy + 1) * 17 + hash2(gx, gy + 1, 202) * 10 - 5 + offY;
+  for (let gy = Math.floor((wy - 6) / sy); gy <= Math.floor((wy + 21) / sy); gy++) {
+    for (let gx = Math.floor((wx - 6) / sx); gx <= Math.floor((wx + 21) / sx); gx++) {
+      const ax = gx * sx + hash2(gx, gy, 201) * 10 - 5 + offX;
+      const ay = gy * sy + hash2(gx, gy, 202) * 10 - 5 + offY;
+      const bx = (gx + 1) * sx + hash2(gx + 1, gy, 201) * 10 - 5 + offX;
+      const by = gy * sy + hash2(gx + 1, gy, 202) * 10 - 5 + offY;
+      const cx = (gx + 1) * sx + hash2(gx + 1, gy + 1, 201) * 10 - 5 + offX;
+      const cy = (gy + 1) * sy + hash2(gx + 1, gy + 1, 202) * 10 - 5 + offY;
+      const dx = gx * sx + hash2(gx, gy + 1, 201) * 10 - 5 + offX;
+      const dy = (gy + 1) * sy + hash2(gx, gy + 1, 202) * 10 - 5 + offY;
       const mx = (ax + bx + cx + dx) / 4, my = (ay + by + cy + dy) / 4;
-      slab[0] = ax * 0.8 + dx * 0.2; slab[1] = ay * 0.8 + dy * 0.2;
-      slab[2] = ax * 0.8 + bx * 0.2; slab[3] = ay * 0.8 + by * 0.2;
-      slab[4] = bx * 0.8 + ax * 0.2; slab[5] = by * 0.8 + ay * 0.2;
-      slab[6] = bx * 0.8 + cx * 0.2; slab[7] = by * 0.8 + cy * 0.2;
-      slab[8] = cx * 0.8 + bx * 0.2; slab[9] = cy * 0.8 + by * 0.2;
-      slab[10] = cx * 0.8 + dx * 0.2; slab[11] = cy * 0.8 + dy * 0.2;
-      slab[12] = dx * 0.8 + cx * 0.2; slab[13] = dy * 0.8 + cy * 0.2;
-      slab[14] = dx * 0.8 + ax * 0.2; slab[15] = dy * 0.8 + ay * 0.2;
-      for (let i = 0; i < 16; i += 2) { slab[i] += (mx - slab[i]) * 0.08; slab[i + 1] += (my - slab[i + 1]) * 0.08; }
-      const seed = hash2(gx, gy, 204), shade = seed < 0.26 ? 3 : 4;
-      clippedSlab(p, ramp[shade], px, py);
-      clippedLine(p, slab[2], slab[3] + 1, slab[4], slab[5] + 1, ramp[shade + 1], px, py);
-      if (seed < 0.3) clippedLine(p, mx - 2, my - 2, mx + 1, my + 1, ramp[shade - 1], px, py);
-      if (ruined && seed > 0.61) {
-        const moss = rampFor('grass', biome);
-        clippedLine(p, slab[12], slab[13] - 1, slab[14] + 1, slab[15], moss[3], px, py);
-        clippedLine(p, slab[12] + 1, slab[13] - 2, slab[14] + 2, slab[15], moss[4], px, py);
-      }
+      slab[0] = ax * 0.9 + dx * 0.1; slab[1] = ay * 0.9 + dy * 0.1;
+      slab[2] = ax * 0.9 + bx * 0.1; slab[3] = ay * 0.9 + by * 0.1;
+      slab[4] = bx * 0.9 + ax * 0.1; slab[5] = by * 0.9 + ay * 0.1;
+      slab[6] = bx * 0.9 + cx * 0.1; slab[7] = by * 0.9 + cy * 0.1;
+      slab[8] = cx * 0.9 + bx * 0.1; slab[9] = cy * 0.9 + by * 0.1;
+      slab[10] = cx * 0.9 + dx * 0.1; slab[11] = cy * 0.9 + dy * 0.1;
+      slab[12] = dx * 0.9 + cx * 0.1; slab[13] = dy * 0.9 + cy * 0.1;
+      slab[14] = dx * 0.9 + ax * 0.1; slab[15] = dy * 0.9 + ay * 0.1;
+      for (let i = 0; i < 16; i += 2) { slab[i] += (mx - slab[i]) * 0.02; slab[i + 1] += (my - slab[i + 1]) * 0.02; }
+      const seed = hash2(gx, gy, 204), shade = seed < 0.3 ? 1 : 2;
+      clippedSlab(p, floor[shade], px, py);
+      if (seed < 0.24) clippedLine(p, slab[2], slab[3] + 1, slab[4], slab[5] + 1, floor[3], px, py);
+      if (ruined && seed < 0.12) clippedLine(p, mx - 3, my - 2, mx + 1, my + 2, floor[0], px, py);
     }
   }
 }
@@ -249,22 +255,38 @@ function paintMineralAndWood(p, type, biome, tx, ty, px, py, ramp, n, lavaMask) 
     if (n[1] !== 'cliff') p.rect(px + 14, py + (top ? 4 : 0), 2, top ? 10 : 14, ramp[1]);
     if (hash2(tx, ty, 60) < 0.45) p.line(px + 8, py + 8, px + 6, py + 12, ramp[1]);
   } else if (type === 'stone' || type === 'ruin') {
-    flagstones(p, wx, wy, px, py, ramp, biome, type === 'ruin');
-  } else if (type === 'bridge' || type === 'plank') {
-    const r = RAMPS.wood;
-    const vertical = n[0] === type || n[2] === type;
-    const inset = type === 'bridge' ? 2 : 0;
-    p.rect(px + (vertical ? inset : 0), py + (vertical ? 0 : inset), vertical ? 16 - inset * 2 : 16, vertical ? 16 : 16 - inset * 2, r[3]);
+    flagstones(p, wx, wy, px, py, biome, type === 'ruin');
+  } else if (type === 'plank') {
+    // Long weathered floorboards, not rails repeated around every floor tile.
+    // Seams and staggered joints are world-aligned across wide rooms and chunks.
+    const r = FLOOR_WOOD;
+    p.rect(px, py, 16, 16, r[2]);
+    for (let x = 0; x < 16; x++) {
+      const board = Math.floor((wx + x) / 12), across = mod(wx + x, 12);
+      if (across === 0) p.rect(px + x, py, 1, 16, r[1]);
+      for (let y = 0; y < 16; y++) {
+        const along = mod(wy + y + board * 17, 48);
+        if (along === 0 && across > 0) p.set(px + x, py + y, r[0]);
+        else if (along === 17 && across > 3 && across < 8 && board % 3 === 0) p.set(px + x, py + y, r[3]);
+      }
+    }
+    if (n[0] !== 'plank' && n[0] !== 'bridge') p.rect(px, py, 16, 1, r[3]);
+  } else if (type === 'bridge') {
+    const r = BRIDGE_WOOD, vertical = n[0] === type || n[2] === type;
+    const left = vertical && n[3] !== type && n[3] !== 'plank' ? 2 : 0;
+    const right = vertical && n[1] !== type && n[1] !== 'plank' ? 2 : 0;
+    const top = !vertical && n[0] !== type && n[0] !== 'plank' ? 2 : 0;
+    const bottom = !vertical && n[2] !== type && n[2] !== 'plank' ? 2 : 0;
+    p.rect(px + left, py + top, 16 - left - right, 16 - top - bottom, r[2]);
     for (let i = 0; i < 16; i++) {
-      const seam = mod((vertical ? wy : wx) + i, 5);
-      if (seam === 0 || seam === 1) p.rect(px + (vertical ? inset : i), py + (vertical ? i : inset), vertical ? 16 - inset * 2 : 1, vertical ? 1 : 16 - inset * 2, r[seam ? 6 : 1]);
+      if (mod((vertical ? wy : wx) + i, 8) === 0) p.rect(px + (vertical ? left : i), py + (vertical ? i : top), vertical ? 16 - left - right : 1, vertical ? 1 : 16 - top - bottom, r[0]);
     }
     if (vertical) {
-      p.rect(px + 2, py, 1, 16, r[6]); p.rect(px + 13, py, 2, 16, r[1]);
-      p.set(px + 4, py + 3, RAMPS.stone[3]); p.set(px + 11, py + 3, RAMPS.stone[3]);
+      if (n[3] !== type && n[3] !== 'plank') p.rect(px + 2, py, 1, 16, r[3]);
+      if (n[1] !== type && n[1] !== 'plank') p.rect(px + 13, py, 1, 16, r[0]);
     } else {
-      p.rect(px, py + 2, 16, 1, r[6]); p.rect(px, py + 13, 16, 2, r[1]);
-      p.set(px + 3, py + 4, RAMPS.stone[3]); p.set(px + 3, py + 11, RAMPS.stone[3]);
+      if (n[0] !== type && n[0] !== 'plank') p.rect(px, py + 2, 16, 1, r[3]);
+      if (n[2] !== type && n[2] !== 'plank') p.rect(px, py + 13, 16, 1, r[0]);
     }
   } else if (type === 'lava') {
     if (lavaMask) for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
@@ -273,12 +295,12 @@ function paintMineralAndWood(p, type, biome, tx, ty, px, py, ramp, n, lavaMask) 
     }
   } else if (type === 'crystal') {
     for (let y = 0; y < 16; y++) {
-      let a = (wx + 2 * (wy + y)) & 31, b = (wx - 2 * (wy + y)) & 31;
+      let a = (wx + 2 * (wy + y)) & 63, b = (wx - 2 * (wy + y)) & 63;
       let out = (py + y) * p.w + px;
       for (let x = 0; x < 16; x++, out++) {
-        if (a === 0 || b === 0) p.data[out] = ramp[4];
-        else if (a < 8 && b > 20) p.data[out] = ramp[3];
-        a = (a + 1) & 31; b = (b + 1) & 31;
+        if (a === 0 && b < 32) p.data[out] = ramp[3];
+        else if (a < 16 && b > 40) p.data[out] = ramp[4];
+        a = (a + 1) & 63; b = (b + 1) & 63;
       }
     }
   } else if (type === 'snow' && hash2(tx, ty, 56) < 0.4) {
@@ -341,7 +363,8 @@ function paintTile(p, map, tx, ty, px, py, noise, stride) {
     if (v === 'tallgrass') hasTall = true;
   }
 
-  paintTexture(p, type, wx, wy, px, py, ramp, tone, noise, stride);
+  // Opaque floor painters own their base fill; do not shade beneath them twice.
+  if (type !== 'stone' && type !== 'ruin' && type !== 'plank') paintTexture(p, type, wx, wy, px, py, ramp, tone, noise, stride);
 
   if (WET.has(type) || type === 'bridge') {
     const shore = bankMask !== 0;

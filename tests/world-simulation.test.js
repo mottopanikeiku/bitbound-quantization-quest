@@ -2,18 +2,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { World } from '../src/world/world.js';
 import { INTERACTABLES, TILE, ENTRIES } from '../src/world/map.js';
-import { newGame } from '../src/state.js';
+import { newGame, sanitize } from '../src/state.js';
 import { SnapBridge, PUZZLES } from '../src/world/puzzles.js';
 import { ZONES } from '../src/content/game-data.js';
 
-function harness() {
-  const state = newGame();
-  const calls = { battles: [], dialogues: [], endings: 0, puzzles: [] };
+function harness(state = newGame()) {
+  const calls = { battles: [], dialogues: [], endings: 0, puzzles: [], flags: [] };
   const game = {
     state, time: 0, reducedMotion: true, screen: { w: 384, h: 216 },
     audio: { play() {}, snapNotes() {} }, announce() {}, save() {}, toast() {},
     hasFlag: (id) => state.flags.includes(id),
-    setFlag: (id) => { if (!state.flags.includes(id)) state.flags.push(id); },
+    setFlag: (id, value = true) => {
+      calls.flags.push({ id, value });
+      if (value && !state.flags.includes(id)) state.flags.push(id);
+      else if (!value) state.flags = state.flags.filter((flag) => flag !== id);
+    },
     say: (lines, options = {}) => calls.dialogues.push({ lines, ...options }),
     unlockTechnique: (id) => { if (!state.techniques.includes(id)) state.techniques.push(id); },
     startBattle: (battle) => calls.battles.push(battle),
@@ -63,8 +66,10 @@ test('substepped collisions slide along walls instead of tunnelling or stopping 
 });
 
 test('staticlings alert, contact-battle after grace, and abandon a distant chase', () => {
-  const { world, calls } = harness();
+  const { world, game, calls } = harness();
   const enemy = world.statics[0];
+  world.statics = [enemy];
+  game.setFlag('stone-0');
   world.hero.x = enemy.x;
   world.hero.y = enemy.y;
   world.contactCooldown = 1;
@@ -76,8 +81,10 @@ test('staticlings alert, contact-battle after grace, and abandon a distant chase
   assert.equal(calls.battles[0].foeId, 'static-0');
   assert.equal(calls.battles[0].guardian, false);
   assert.ok(world.contactCooldown > 0);
+  enemy.x += 24;
+  world.contactCooldown = 0;
   enemy.mood = 'chase';
-  world.hero.x += 150;
+  world.hero.x = enemy.x + 150;
   world._updateStaticlings(1 / 60);
   assert.equal(enemy.mood, 'return');
 });
@@ -96,6 +103,7 @@ test('Grid Stone unlocks its technique before shrine dialogue can start a guardi
   game.time = 1.3;
   world.update(1 / 60, input());
   assert.deepEqual(state.techniques, ['bits']);
+  assert.ok(world.statics.filter((enemy) => enemy.zone === 0).every((enemy) => enemy.lifecycle === 'ACTIVE'));
   world._interact(shrine);
   assert.equal(calls.battles.length, 0, 'pre-battle conversation is not skipped');
   calls.dialogues.at(-1).onDone();
@@ -126,6 +134,7 @@ test('dev placement survives the wrapper setState with a new save, and puzzle Es
   world.setState(state);
   assert.equal(world.position.x, ENTRIES[0].x);
   assert.equal(world.position.y, ENTRIES[0].y);
+  assert.equal(world.position.facing, ENTRIES[0].facing ?? 'up');
   world.puzzle = new SnapBridge(game, PUZZLES[0], { onClose: () => { world.puzzle = null; } });
   assert.equal(world.canPause, false);
   world.update(1 / 60, input(0, 0, false, 'cancel'));
@@ -154,5 +163,168 @@ test('every Grid Stone adds exactly one colour bit once, while guardian restorat
     world.restoreZone(zone.id);
     assert.equal(world.restorations.get(zone.id).duration, 2.2);
     assert.ok(world.restored.has(zone.id));
+  }
+});
+
+test('every zone patrol is visibly dormant and stationary until its own stone is awake', () => {
+  for (const zone of ZONES) {
+    const { world, game, calls } = harness();
+    const enemy = world.statics.find((item) => item.zone === zone.id);
+    world.statics = [enemy];
+    world.hero.x = enemy.x;
+    world.hero.y = enemy.y;
+    world.contactCooldown = 0;
+    world._updateStaticlings(3);
+    assert.equal(enemy.lifecycle, 'DORMANT');
+    assert.equal(enemy.mood, 'sleeping');
+    assert.equal(enemy.alive, true, 'sleeping patrol remains visible');
+    assert.deepEqual([enemy.x, enemy.y], [enemy.homeX, enemy.homeY]);
+    assert.equal(calls.battles.length, 0, 'walking over a sleeper cannot bypass its lesson');
+    if (zone.id > 0) {
+      game.setFlag(`stone-${zone.id - 1}`);
+      world._updateStaticlings(1);
+      assert.equal(enemy.lifecycle, 'DORMANT', 'the previous zone technique is insufficient');
+    }
+    game.setFlag(`stone-${zone.id}`);
+    world._updateStaticlings(1 / 60);
+    assert.equal(enemy.lifecycle, 'ACTIVE');
+    assert.equal(calls.battles.length, 1, `${zone.key} permits practice after the stone`);
+  }
+});
+
+test('cleared active patrols survive Continue, but an explicit rest re-arms only active zones', () => {
+  const { world, game, state } = harness();
+  game.setFlag('stone-0');
+  const enemy = world.statics.find((item) => item.zone === 0);
+  const dormant = world.statics.find((item) => item.zone === 1);
+  world.afterBattle(enemy.uid, 'won');
+  assert.equal(enemy.alive, false);
+  assert.ok(game.hasFlag(`patrol-cleared-${enemy.uid}`));
+
+  const resumed = harness(sanitize(JSON.parse(JSON.stringify(state))));
+  resumed.world.setState(resumed.state);
+  const resumedEnemy = resumed.world.statics.find((item) => item.uid === enemy.uid);
+  assert.equal(resumedEnemy.lifecycle, 'ACTIVE');
+  assert.equal(resumedEnemy.alive, false, 'Continue does not charge another practice battle');
+  resumed.world.respawnStaticlings();
+  assert.equal(resumedEnemy.alive, true);
+  assert.equal(resumed.game.hasFlag(`patrol-cleared-${enemy.uid}`), false);
+  assert.deepEqual([resumedEnemy.x, resumedEnemy.y], [resumedEnemy.homeX, resumedEnemy.homeY]);
+  assert.equal(resumed.world.statics.find((item) => item.uid === dormant.uid).mood, 'sleeping');
+  assert.ok(resumed.calls.flags.filter((call) => call.value === false).every((call) => call.id.includes('meadow-static')));
+
+  const afterRest = harness(sanitize(JSON.parse(JSON.stringify(resumed.state))));
+  afterRest.world.setState(afterRest.state);
+  assert.equal(afterRest.world.statics.find((item) => item.uid === enemy.uid).alive, true, 'Continue retains an explicit rest respawn');
+  for (let i = 0; i < 160; i++) {
+    afterRest.world.afterBattle(enemy.uid, 'won');
+    afterRest.world.respawnStaticlings();
+  }
+  assert.deepEqual(afterRest.state.flags, ['stone-0'], 'rest never creates an ever-growing epoch log');
+});
+
+test('friendship purifies every patrol immediately and rest or Continue cannot revive it', () => {
+  const { world, game, state, calls } = harness();
+  game.setFlag('stone-0');
+  world._updateStaticlings(0);
+  const enemies = world.statics.filter((enemy) => enemy.zone === 0);
+  enemies[0].mood = 'chase';
+  state.friends.push(0);
+  world.restoreZone(0);
+  for (const enemy of enemies) {
+    assert.equal(enemy.lifecycle, 'PURIFIED');
+    assert.equal(enemy.alive, false);
+    assert.equal(enemy.mood, 'purified');
+    assert.ok(enemy.purifyUntil > game.time && enemy.purifyUntil <= game.time + 1);
+  }
+  world.hero.x = enemies[0].x;
+  world.hero.y = enemies[0].y;
+  world.contactCooldown = 0;
+  game.time = 1;
+  world._updateStaticlings(1);
+  assert.equal(calls.battles.length, 0);
+  assert.ok(enemies.every((enemy) => enemy.purifyUntil < game.time));
+  world.respawnStaticlings();
+  assert.ok(enemies.every((enemy) => !enemy.alive && enemy.lifecycle === 'PURIFIED'));
+  const resumed = harness(sanitize(JSON.parse(JSON.stringify(state))));
+  resumed.world.setState(resumed.state);
+  resumed.world.respawnStaticlings();
+  assert.ok(resumed.world.statics.filter((enemy) => enemy.zone === 0).every((enemy) => !enemy.alive && enemy.lifecycle === 'PURIFIED'));
+  assert.doesNotMatch(resumed.world.describe(), /Staticling chasing/);
+});
+
+test('restoration flags purify patrols even before the friendship list is reapplied', () => {
+  const { world, game } = harness();
+  game.setFlag('stone-6');
+  world.restoreZone(6);
+  world.respawnStaticlings();
+  assert.ok(world.statics.filter((enemy) => enemy.zone === 6).every((enemy) => !enemy.alive && enemy.lifecycle === 'PURIFIED'));
+});
+
+test('FLEE returns the patrol home and requires both six seconds and leaving its notice circle', () => {
+  const { world, game, calls, state } = harness();
+  game.setFlag('stone-0');
+  const enemy = world.statics.find((item) => item.zone === 0);
+  world.statics = [enemy];
+  world._syncPatrol(enemy);
+  enemy.x += 24;
+  enemy.mood = 'chase';
+  world.hero.x = enemy.homeX;
+  world.hero.y = enemy.homeY;
+  world.afterBattle(enemy.uid, 'fled');
+  assert.deepEqual([enemy.x, enemy.y], [enemy.homeX, enemy.homeY]);
+  assert.equal(world.contactCooldown, 6);
+  world.setState(state); // The real world scene reapplies state after battle.
+  assert.equal(enemy.disengaged, true);
+  assert.equal(world.contactCooldown, 6);
+  for (let i = 0; i < 5; i++) {
+    world.contactCooldown--;
+    world._updateStaticlings(1);
+    assert.notEqual(enemy.mood, 'alert');
+    assert.notEqual(enemy.mood, 'chase');
+  }
+  world.contactCooldown = 0;
+  world._updateStaticlings(1);
+  assert.equal(enemy.disengaged, true, 'standing near home cannot trigger an immediate rematch');
+  assert.equal(calls.battles.length, 0);
+  world.hero.x = enemy.homeX + 120;
+  world._updateStaticlings(1 / 60);
+  assert.equal(enemy.disengaged, false);
+  world.hero.x = enemy.x;
+  world.hero.y = enemy.y;
+  world._updateStaticlings(1 / 60);
+  assert.equal(calls.battles.length, 1, 'deliberately returning later still permits practice');
+});
+
+test('shrine, camp, stone, cache and bridge-pedestal approaches suppress pursuit and contact', () => {
+  const radii = { shrine: 56, camp: 40, stone: 40, cache: 40, puzzle: 40 };
+  for (const [interaction, radius] of Object.entries(radii)) {
+    const { world, game, calls } = harness();
+    game.setFlag('stone-0');
+    const enemy = world.statics.find((item) => item.zone === 0);
+    world.statics = [enemy];
+    world._syncPatrol(enemy);
+    const item = INTERACTABLES.find((entry) => entry.zone === 0 && entry.interaction === interaction);
+    world.hero.x = item.x + radius - 2;
+    world.hero.y = item.y;
+    enemy.x = world.hero.x;
+    enemy.y = world.hero.y;
+    enemy.homeX = item.x + radius + 64;
+    enemy.homeY = item.y;
+    enemy.mood = 'chase';
+    world.contactCooldown = 0;
+    assert.equal(world._safeAt(world.hero.x, world.hero.y, 0), true, interaction);
+    world._updateStaticlings(1 / 60);
+    assert.equal(calls.battles.length, 0, interaction);
+    assert.equal(enemy.mood, 'return', interaction);
+    // Even a hero just outside the circle cannot be contacted by a patrol
+    // whose own feet are still inside the protected approach.
+    world.hero.x = item.x + radius + 4;
+    enemy.x = item.x + radius - 2;
+    enemy.y = item.y;
+    enemy.mood = 'chase';
+    world._updateStaticlings(1 / 60);
+    assert.equal(calls.battles.length, 0, `${interaction}: enemy inside`);
+    assert.notEqual(enemy.mood, 'chase');
   }
 });
