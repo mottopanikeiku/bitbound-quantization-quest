@@ -232,11 +232,13 @@ export class Game {
         this.toast('You wake by the campfire. Friends kept; try a new plan.', { kind: 'notice', ms: 4200 });
       };
     } else {
+      const reward = result.outcome === 'won' ? Math.max(0, Math.trunc(result.reward?.bytes ?? 0)) : 0;
       state.hero = {
         hp: Math.max(1, Math.min(stats.maxHp, result.hero.hp ?? state.hero.hp)),
-        bytes: Math.max(0, Math.min(stats.maxBytes, result.hero.bytes ?? state.hero.bytes)),
+        bytes: Math.max(0, Math.min(stats.maxBytes, (result.hero.bytes ?? state.hero.bytes) + reward)),
         snacks: Math.max(0, Math.min(stats.maxSnacks, result.hero.snacks ?? state.hero.snacks)),
       };
+      if (reward) after = () => this.toast(`Static cleared: +${reward} B`, { kind: 'reward', ms: 2200 });
     }
     world.afterBattle(params.uid, result.outcome);
     this.cut(
@@ -388,10 +390,11 @@ export class Game {
         const inWorld = this.scene === this.worldScene;
         const inBattle = this.scene === this.battleScene;
         const worldFree = inWorld && this.worldScene.world.canPause !== false;
-        if (worldFree && input.pressed('notes')) {
+        const battleFree = inBattle && this.battleScene.canPause;
+        if ((worldFree || battleFree) && input.pressed('notes')) {
           input.consume('notes');
           this.openNotes();
-        } else if ((worldFree || (inBattle && this.battleScene.canPause)) && input.pressed('pause')) {
+        } else if ((worldFree || battleFree) && input.pressed('pause')) {
           input.consume('pause');
           input.consume('cancel');
           this.openPause();
