@@ -11,6 +11,8 @@ const SIZE = 128;
 const MASK = SIZE - 1;
 const PHASES = 24;
 const SHADE_STEPS = 8;
+const CALM_BANK = SHADE_STEPS * 8;
+const CALM_STEPS = 8;
 const TITLES = ['Bitleaf reverie', 'The offset cathedral', 'A tide of values', 'Three silken channels', 'Ember inference', 'The ink between', 'The precision court', 'The lost signal', 'Every bit a star'];
 // Each entry is a material ramp and a deliberately low brightness; highlights belong to the foe.
 const THEMES = {
@@ -147,20 +149,37 @@ function paintPatterns(id) {
   return { base: new Uint8Array(base.data), detail: new Uint8Array(detail.data) };
 }
 
+// Cache the equivalent of a palette-coloured stage wash, rather than alpha-blending
+// another full-screen surface every frame. Both colours originate in PAL ramps.
+function washWord(base, tint, amount) {
+  const r = Math.round((base & 255) + ((tint & 255) - (base & 255)) * amount);
+  const g = Math.round(((base >>> 8) & 255) + (((tint >>> 8) & 255) - ((base >>> 8) & 255)) * amount);
+  const b = Math.round(((base >>> 16) & 255) + (((tint >>> 16) & 255) - ((base >>> 16) & 255)) * amount);
+  return ((255 << 24) | (b << 16) | (g << 8) | r) >>> 0;
+}
+
 function getField(id) {
   let field = fields.get(id);
   if (field) return field;
   const theme = THEMES[id];
   const palettes = [];
   for (let phase = 0; phase < PHASES; phase++) {
-    const palette = new Uint32Array(SHADE_STEPS * 8);
+    const palette = new Uint32Array(CALM_BANK * CALM_STEPS);
     for (let shade = 0; shade < SHADE_STEPS; shade++) for (let i = 0; i < theme.tones.length; i++) {
       const [name, level] = theme.tones[i];
       const ramp = PAL[name];
       const cycle = Math.sin(phase * Math.PI * 2 / PHASES + i * 1.35) * (i > 1 ? 0.3 : 0.08);
       const v = clamp(level + cycle - shade * 0.22, 0, ramp.length - 1);
       const low = Math.floor(v);
-      palette[shade * 8 + i] = u32(mix(ramp[low], ramp[Math.min(ramp.length - 1, low + 1)], v - low));
+      const base = u32(mix(ramp[low], ramp[Math.min(ramp.length - 1, low + 1)], v - low));
+      // A dim blue-grey neutral keeps purple corruption distinct; retain 12% of
+      // the tapestry at full calm so the stage never becomes a flat cut-out.
+      const quiet = clamp(0.65 + i * 0.012 + cycle * 0.025 - shade * 0.065, 0, 2);
+      const quietLow = Math.floor(quiet);
+      const tint = u32(mix(PAL.dusk[quietLow], PAL.dusk[quietLow + 1], quiet - quietLow));
+      for (let calm = 0; calm < CALM_STEPS; calm++) {
+        palette[calm * CALM_BANK + shade * 8 + i] = washWord(base, tint, calm / (CALM_STEPS - 1) * 0.88);
+      }
     }
     palettes.push(palette);
   }
@@ -169,21 +188,34 @@ function getField(id) {
   return field;
 }
 
-function getFrame(w, h) {
-  const key = `${w}:${h}`;
+function getFrame(w, h, stage) {
+  const key = `${w}:${h}:${stage ? `${stage.x}:${stage.y}:${stage.w}:${stage.h}` : 'auto'}`;
   let frame = frames.get(key);
   if (frame) return frame;
   const { canvas, ctx } = makeCanvas(w, h);
   const image = ctx.createImageData(w, h);
-  const shade = new Uint8Array(w * h);
+  const shade = new Uint16Array(w * h);
+  const portrait = h > w;
+  const cx = stage ? stage.x + stage.w / 2 : w * (portrait ? 0.5 : 0.73);
+  const cy = stage ? stage.y + stage.h / 2 : portrait ? Math.min(118, h * 0.3) : h * 0.46;
+  const rx = stage ? Math.max(70, stage.w * 0.72 + 22) : w * (portrait ? 0.5 : 0.34);
+  const ry = stage ? Math.max(62, stage.h * 0.72 + 18) : portrait ? 94 : h * 0.48;
   const edges = new Float32Array(w);
   for (let x = 0; x < w; x++) edges[x] = (Math.abs(x / w - 0.5) * 2) ** 3 * 2;
   for (let y = 0; y < h; y++) {
     const bottom = clamp((y / h - 0.42) / 0.58);
     const top = clamp((0.15 - y / h) / 0.15);
     const vertical = bottom ** 1.6 * 5.8 + top * 1.3;
+    const dy = (y - cy) / ry;
     for (let x = 0; x < w; x++) {
-      shade[y * w + x] = Math.min(7, Math.floor(edges[x] + vertical + bayer(x, y))) * 8;
+      const threshold = bayer(x, y);
+      const dx = (x - cx) / rx;
+      const falloff = clamp((1 - dx * dx - dy * dy) / 0.65);
+      const calm = falloff * falloff * (3 - 2 * falloff);
+      // Dither only between adjacent wash strengths, never between the original
+      // pattern and an opaque patch. Geometry is cached; the hot loop is unchanged.
+      const bank = Math.min(CALM_STEPS - 1, Math.floor(calm * (CALM_STEPS - 1) + threshold)) * CALM_BANK;
+      shade[y * w + x] = bank + Math.min(7, Math.floor(edges[x] + vertical + threshold)) * 8;
     }
   }
   frame = { canvas, ctx, image, words: new Uint32Array(image.data.buffer), shade };
@@ -193,13 +225,13 @@ function getFrame(w, h) {
   return frame;
 }
 
-/** Fills any canvas size; intensity scales distortion, reduced keeps only a slow drift. */
-export function drawBattleBackground(ctx, screen, id, t, { intensity = 1, reduced = false } = {}) {
+/** Fills the canvas. Optional stage={x,y,w,h} places a cached, softly feathered calm zone. */
+export function drawBattleBackground(ctx, screen, id, t, { intensity = 1, reduced = false, stage = null } = {}) {
   id = THEMES[id] ? id : 'static';
   const w = screen.w | 0;
   const h = screen.h | 0;
   const { base, detail, palettes, theme } = getField(id);
-  const frame = getFrame(w, h);
+  const frame = getFrame(w, h, stage);
   const time = t * (reduced ? 0.17 : theme.speed);
   const palette = palettes[((Math.floor(time * 3) % PHASES) + PHASES) % PHASES];
   const amount = reduced ? 0 : clamp(intensity, 0, 3);
