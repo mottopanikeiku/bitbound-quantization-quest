@@ -43,9 +43,9 @@ kbd { font: 10px/1.3 ui-monospace, SFMono-Regular, Consolas, monospace; color: #
   .controls kbd { font-size: 9px; padding-inline: 2px; }
 }
 @media (pointer: coarse) {
-  .touch { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 124px; padding: 5px 10px 8px; touch-action: none; user-select: none; -webkit-user-select: none; }
+  .touch { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 124px; padding: 5px 6px 8px; touch-action: none; user-select: none; -webkit-user-select: none; }
   .touch button { position: relative; display: flex; align-items: center; justify-content: center; border: 1px solid #a9a2c44d; background: #1b1630; box-shadow: 0 3px 0 #080611, inset 0 1px 0 #fff4dc12; color: #d0c6dd; border-radius: 7px; padding: 0; touch-action: none; }
-  .touch button:active, .touch .is-held { background: #3b3466; color: var(--gold); box-shadow: 0 1px 0 #080611, inset 0 1px 0 #fff4dc20; transform: translateY(2px); }
+  .touch button:active, .touch button.is-held { background: #3b3466; color: var(--gold); box-shadow: 0 1px 0 #080611, inset 0 1px 0 #fff4dc20; transform: translateY(2px); }
   .dpad { display: grid; grid-template-columns: repeat(3, 37px); grid-template-rows: repeat(3, 34px); gap: 2px; }
   .dpad button { font-size: 21px; }
   .dpad [data-action="up"] { grid-column: 2; grid-row: 1; }
@@ -53,10 +53,14 @@ kbd { font: 10px/1.3 ui-monospace, SFMono-Regular, Consolas, monospace; color: #
   .dpad [data-action="down"] { grid-column: 2; grid-row: 3; }
   .dpad [data-action="right"] { grid-column: 3; grid-row: 2; }
   .dpad-center { grid-column: 2; grid-row: 2; margin: 8px; border: 1px solid #72d6bc48; background: #72d6bc0a; }
-  .face { display: grid; grid-template-columns: 44px 50px 54px; grid-template-rows: 54px 20px; align-items: center; gap: 4px; }
-  .face .start-button { grid-column: 1; grid-row: 2; border-radius: 12px; width: 44px; height: 24px; font: 8px ui-monospace, monospace; letter-spacing: .02em; }
-  .face .back-button { grid-column: 2; grid-row: 1; margin-top: 24px; width: 48px; height: 48px; border-radius: 50%; }
-  .face .act-button { grid-column: 3; grid-row: 1; border-color: #72d6bc88; color: var(--teal); width: 53px; height: 53px; border-radius: 50%; background: #123331; }
+  .touch-aux { display: flex; flex: none; flex-direction: column; align-items: center; gap: 8px; width: 52px; }
+  .touch-aux .steady-button { flex-direction: column; gap: 3px; width: 52px; height: 44px; border-color: #72d6bc66; border-radius: 8px; background: #123331; color: var(--teal); }
+  .steady-button b { font: 8px/1 ui-monospace, monospace; letter-spacing: .05em; }
+  .steady-button small { font: 8px/1 system-ui, sans-serif; color: #a9a2c4; }
+  .touch-aux .start-button { width: 44px; height: 25px; border-radius: 12px; font: 8px ui-monospace, monospace; letter-spacing: .02em; }
+  .face { display: grid; flex: none; grid-template-columns: 48px 54px; grid-template-rows: 64px 16px; align-items: start; gap: 4px; }
+  .face .back-button { grid-column: 1; grid-row: 1; margin-top: 22px; width: 48px; height: 48px; border-radius: 50%; }
+  .face .act-button { grid-column: 2; grid-row: 1; border-color: #72d6bc88; color: var(--teal); width: 53px; height: 53px; border-radius: 50%; background: #123331; }
   .face b { font: 19px/1 ui-monospace, monospace; }
   .face small { position: absolute; top: calc(100% + 7px); font-size: 8px; color: #88839e; }
   .footer { min-height: 24px; justify-content: center; padding-top: 2px; padding-bottom: max(4px, env(safe-area-inset-bottom)); border-top: none; }
@@ -71,7 +75,9 @@ kbd { font: 10px/1.3 ui-monospace, SFMono-Regular, Consolas, monospace; color: #
   .stage { align-self: center; width: calc(100% - 256px); }
   .touch { position: absolute; inset: 45px 12px max(7px, env(safe-area-inset-bottom)); min-height: 0; padding: 0; pointer-events: none; }
   .touch button { pointer-events: auto; }
-  .face { grid-template-columns: 0 48px 52px; gap: 3px; }
-  .face .start-button { grid-column: 2 / 4; justify-self: center; margin-top: 23px; }
+  .touch-aux { position: absolute; left: 0; top: calc(50% + 62px); width: 115px; flex-direction: row; justify-content: center; gap: 7px; }
+  .touch-aux .steady-button { width: 60px; height: 44px; flex: none; gap: 2px; }
+  .touch-aux .start-button { flex: none; }
+  .face { grid-template-columns: 48px 54px; grid-template-rows: 64px 16px; gap: 3px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; } .touch button:active, .touch .is-held { transform: none; } }
