@@ -1,28 +1,68 @@
-# Bitbound
+# Bitbound — The Static Isle
 
-An original pixel-art browser RPG about **quantization for inference**. Explore an island, befriend tensor spirits, and learn by changing numerical experiments rather than memorizing jargon.
+**[Play the RPG →](https://mottopanikeiku.github.io/bitbound-quantization-quest/)**
 
-**[Play Bitbound in your browser →](https://mottopanikeiku.github.io/bitbound-quantization-quest/)**
+An original pixel-art browser RPG about quantization for inference. **Hold WASD to explore**, avoid or battle roaming staticlings, free seven spirits, and bring the island back to life. Original multi-voice chiptune music changes between exploration, normal battles, bosses, victory and the ending.
 
-No account, API key, model download, or paid service. Progress stays in your browser. Sound is opt-in; your device’s reduced-motion setting is respected.
+This is a gameplay-first replacement of the earlier learning interface: **no click-to-travel map, compulsory articles, numerical forms or knowledge quizzes**. Quantization changes your spells while you play.
 
-## The adventure
+## Controls
 
-Move with **WASD / arrow keys**, interact with **E / Enter**, or use the touch controls and location buttons. Each guardian has a live numerical puzzle, causal feedback, an inspectable trace, and a short application check. Befriend all seven to restore the island.
-
-| Guardian | What you make work |
+| Key | Action |
 | --- | --- |
-| Nib · Bitleaf Meadow | Bit width, rounding, reconstruction error and the storage budget |
-| Chime · Offset Grove | A scale and zero-point that suit an off-center distribution |
-| Brine · Calibration Cove | Representative calibration, range coverage and clipping trade-offs |
-| Spindle · Channel Heights | Per-tensor, per-channel and group scales—including metadata costs |
-| Cinder · Inference Forge | Separately quantized weights/activations and actual toy forward outputs |
-| Vesper · Outlier Archives | An equivalent channel-rescaling experiment before and after rounding |
-| Auric · Precision Spire | Mixed precision in a two-layer model, a separate KV payload estimate, and a real-validation plan |
+| Enter | Begin/continue; start the original music |
+| WASD / arrows | Hold to walk; navigate battle menus |
+| Shift | Run on the island |
+| E / Enter / Space | Interact with a nearby spirit, camp or cache |
+| Space / Enter | Stop each of the three moving pulses during a cast |
+| Q / 1 / 2 / 3 | Cycle / select 2-, 4- or 8-bit spell gear |
+| Escape | Back from tuning; pause/resume |
+| M | Toggle music and effects |
+| F | Full screen |
 
-Completed guardians remain visitable. **Fine-detail courier** and **Stormwatch** change the objectives/data, so an earlier solution no longer wins. No lives, timers, grinding, random captures, or streaks.
+On touch devices, hold the D-pad to walk; **A** interacts/confirms/locks a pulse and **B** returns/pauses. Portrait HUDs and battle menus reflow as readable HTML rather than shrinking desktop glyphs.
 
-The in-game **15-entry Field Guide** covers equations, signed/narrow conventions, integer accumulators, PTQ/QAT, GPTQ, AWQ, SmoothQuant, LLM.int8(), FP8, NF4/QLoRA, mixed precision, KV cache/GQA, and target-device validation. See [RESEARCH.md](RESEARCH.md) for the deeper source-backed synthesis and design rationale.
+## Play loop
+
+- Walk a camera-following island with real terrain collision, protected camps, hidden snack caches and moving enemies. The gold lantern and compass point toward your next spirit. Clicking the world never teleports you.
+- Contact a staticling or challenge a nearby guardian to enter a turn-based battle. **CAST** times three pulses; the white cursor is your aim and the green cursor is the reconstructed toy signal.
+- **TUNE** changes weight/sample precision and unlocked rulers. **SCAN** fits activation ranges to the enemy's calibration archive. **GUARD** reduces the next attack and restores byte charge. **SNACK** heals; **RUN** retreats.
+- Watch charged attacks: guarding matters. Win friendships, gain maximum HP, unlock new rulers and acquire a following companion. Defeat returns you to camp without deleting friends; no grinding or random capture is required.
+- Camps heal/recharge and restock snacks. Progress, position, gear, caches and music preference stay locally on this device. The RPG uses a separate save format; former quiz completions are not battle victories.
+
+## Quantization inside the game
+
+| Spirit | Mechanism expressed through play |
+| --- | --- |
+| Nib | Cheap low-bit packets versus coarse reconstructed signals |
+| Chime | Scanning an off-center distribution and an affine zero-shift ruler |
+| Brine | Calibration coverage, percentile trimming and changing storm tails |
+| Spindle | Independent channel scales preserve small signals, at extra metadata cost |
+| Cinder | Both quantized weights and activation samples affect actual forward outputs |
+| Vesper | Inverse input/weight balancing preserves the unrounded product before quantization |
+| Auric | Allocating precision while managing the spell packet budget |
+
+Each cast has 48 weight values and 48 activation samples. The declared teaching format globally packs the payload and stores a four-byte scale per symmetric group (plus a byte-wide zero-point for affine groups). For one symmetric group in each operand:
+
+| Weight/sample gear | Modeled spell packet |
+| --- | ---: |
+| W2 / A2 | 32 B |
+| W4 / A4 | 56 B |
+| W8 / A8 | 104 B |
+
+The browser calculates quantize/dequantize and **three actual linear dot products**, comparing them with unrounded reference outputs. The green aiming cursor reflects that computed reconstruction, not a preset success animation. More bits do not give a fixed damage bonus: precision, fitted range, grouping, input timing and the current signals all affect the result.
+
+**Damage and byte charge are fictional RPG rules.** Packet bytes model a declared representation, not JavaScript heap or device memory. The game is not a trained LLM, optimized INT kernel, FP16 emulator, task-accuracy benchmark or GPU speed test. Research covers modern deployment methods and KV cache separately; those algorithms are not secretly executed in the game.
+
+## Research and verification
+
+[RESEARCH.md](RESEARCH.md) contains the primary-source numerical contract, calibration/deployment caveats, GPTQ/AWQ/SmoothQuant/FP8/NF4/QLoRA and KV-cache synthesis, and gameplay-design rationale. [AGENTS.md](AGENTS.md) defines bounded ownership and independent adversarial review.
+
+Eighteen numerical/combat/save-boundary tests pass. The actual keyboard browser campaign earned all seven friendships and reached the ending without save or module-state injection; both bridges and all guardian routes were traversed on foot. The earned seven-friend save survived reload. Browser play also exercises guard/scan/snacks, camp recovery, retained aim/code traces, fixed-input tuning, native keyboard controls, and 320/375px portrait actions. Independent numerical and player reviews identified and drove fixes for restart state, HUD overlap, stale displayed HP, unreadable portrait text and missing gear/stock feedback.
+
+The refined five-scene soundtrack produces real destination-connected Web Audio signal. Independent Sol 6.1 checks observed sustained exploration/victory loops, actual contact/boss transitions, mute/resume and rapid toggles; the lead reached the ending and observed its running soundtrack. This is signal/continuity evidence and source composition review, not a claim of human listening or universal musical enjoyment.
+
+These are bounded software/visual checks, not evidence of universal enjoyment, retained human learning or blanket accessibility conformance.
 
 ## Run locally
 
@@ -33,30 +73,6 @@ npm install
 npm run dev
 ```
 
-Open the URL printed by Vite. `npm run build` produces a static site in `dist/`; `npm run preview` serves that build.
+Open the URL printed by Vite. `npm test` checks behavioral boundaries; `npm run build` creates the static game in `dist/`; `npm run preview` serves it. GitHub Actions verifies and deploys successful main-branch commits to GitHub Pages.
 
-`npm test` checks numerical and save-state boundaries. GitHub Actions runs these checks, builds the static game, and deploys successful main-branch commits to GitHub Pages.
-
-## Verification
-
-- Ten numerical/save-state tests pass; the production bundle builds successfully.
-- Actual Chromium playthroughs completed all seven friendships, the ending and both changed-case replays. Wrong answers, stale-result clearing, reload persistence and reset cancellation were exercised.
-- Desktop, 375px and 320px interactions were checked, including keyboard isolation, reduced motion, contextual guide returns and visible continuation/retry actions. All seven guardians are reachable on foot; both bridges were crossed using the real collision/movement code.
-- Independent numerical and player-flow reviews drove the full-width guardian outcomes, readable instructional type, stable control anchors and guide-focus fixes. The twelve Forge outputs were also checked against an independent rational calculation.
-
-These are bounded software/visual checks, not evidence of retained human learning, universal enjoyment, or blanket accessibility conformance.
-
-
-## Implementation
-
-Plain JavaScript modules and Vite; no runtime framework. Hand-authored procedural pixel sprites and a cached canvas island, semantic HTML learning controls, local-only saves, and original synthesized chip sounds. All seven locations support walking or equal-status direct travel. Browser verification—not just numerical tests—covers progression, the ending, replays, narrow-screen layouts and interaction state.
-
-## Educational boundaries
-
-Experiments use small deterministic tensors and toy inference in the browser, not a downloaded LLM. Quantize/dequantize, reconstruction error and storage calculations are real. They are **not hardware benchmarks**, and fewer bits do not guarantee faster inference. Real deployment must validate model quality, memory and latency on the target runtime/device.
-
-The browser uses JavaScript Numbers, not an FP16 emulator or optimized integer kernel. Reference-class agreement is not ground-truth accuracy. Displayed validation data becomes practice when reused for tuning. The outlier puzzle illustrates an equivalent-rescaling mechanism, not full SmoothQuant. The KV estimate is for a separate hypothetical transformer: it does not execute or validate quantized attention/generation. Algorithms described in the guide are not secretly run by the game.
-
-Primary starting references: [ONNX QuantizeLinear](https://onnx.ai/onnx/operators/onnx__QuantizeLinear.html), [ONNX Runtime quantization](https://onnxruntime.ai/docs/performance/model-optimizations/quantization.html). Research and design use bounded specialist workers plus independent adversarial review; see [AGENTS.md](AGENTS.md).
-
-All world, character and pixel artwork is original. Inspired by the feel of classic handheld RPGs; not affiliated with Nintendo or Pokémon.
+Plain JavaScript modules and Vite; no runtime framework, backend, account, API key, analytics, model download or remote font/art/music dependencies. All character/world artwork and melodies are original. Inspired by classic handheld RPGs, not affiliated with Nintendo, Pokémon or EarthBound. MIT licensed.
