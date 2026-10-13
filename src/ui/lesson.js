@@ -1,63 +1,71 @@
-// Lesson card overlay. API fixed by the v2 contract; presentation owned by UI (stub below).
 import { PAL } from '../art/palette.js';
-import { drawText, wrapText, FONT_METRICS } from '../engine/font.js';
-import { drawWindow } from './kit.js';
+import { drawText, wrapText } from '../engine/font.js';
+import { drawWindow, drawIcon, drawScrim, drawPageDots, panelLift } from './kit.js';
 import { LESSONS } from '../content/lessons.js';
 import { drawLessonDiagram } from '../battle/gridviz.js';
 
 export class LessonCard {
-  constructor(game) {
-    this.game = game;
-    this.lesson = null;
-    this.mode = 'learn';
-    this.onDone = null;
-    this.age = 0;
-  }
-
-  get active() {
-    return this.lesson !== null;
-  }
-
-  /** mode: 'learn' (new technique) | 'recap' (victory recap). */
+  constructor(game) { this.game = game; this.lesson = null; this.mode = 'learn'; this.onDone = null; this.age = 0; this.page = 0; this.layoutKey = ''; }
+  get active() { return this.lesson !== null; }
   open({ id, mode = 'learn', onDone = null }) {
-    this.lesson = LESSONS[id] ?? null;
-    this.mode = mode;
-    this.onDone = onDone;
-    this.age = 0;
-    if (!this.lesson) onDone?.();
+    this.lesson = LESSONS[id] ?? null; this.mode = mode; this.onDone = onDone; this.age = 0; this.page = 0; this.layoutKey = '';
+    if (!this.lesson) { this.onDone = null; onDone?.(); }
+    else this.game.announce(`${mode === 'recap' ? 'A lesson in friendship.' : 'Technique discovered.'} ${this.lesson.title}. ${mode === 'recap' ? this.lesson.recap : this.lesson.lines.join(' ')}`);
   }
-
-  close() {
-    const done = this.onDone;
-    this.lesson = null;
-    this.onDone = null;
-    done?.();
-  }
-
-  update(dt, input) {
-    if (!this.active) return;
-    this.age += dt;
-    if (this.age > 0.25 && (input.pressed('confirm') || input.pressed('cancel'))) {
-      input.consume('confirm');
-      input.consume('cancel');
-      this.close();
-    }
-  }
-
-  draw(ctx, screen, t) {
-    if (!this.active) return;
-    const w = screen.w - 24;
-    const h = screen.h - 24;
-    drawWindow(ctx, 12, 12, w, h, 'paper');
-    drawText(ctx, this.lesson.title, 20, 18, { color: PAL.ink });
-    drawLessonDiagram(ctx, { x: 20, y: 32, w: w - 16, h: Math.floor(h * 0.4) }, this.lesson.id, t);
-    let y = 36 + Math.floor(h * 0.4);
-    const lines = this.mode === 'recap' ? [this.lesson.recap] : this.lesson.lines;
-    for (const line of lines) {
-      for (const text of wrapText(line, w - 16)) {
-        drawText(ctx, text, 20, y, { color: PAL.night[2] });
-        y += FONT_METRICS.body.lineHeight;
+  close() { const done = this.onDone; this.lesson = null; this.onDone = null; done?.(); }
+  layout(screen) {
+    const key = `${screen.w}:${screen.h}`;
+    if (key === this.layoutKey) return this.geom;
+    const x = screen.portrait ? 7 : 13, y = screen.portrait ? 13 : 9, w = screen.w - x * 2, h = screen.h - y * 2;
+    const split = !screen.portrait, diagramW = split ? 147 : w - 22, diagramH = split ? 103 : 92;
+    const tx = split ? x + 171 : x + 12, ty = split ? y + 43 : y + 158;
+    const tw = split ? w - 184 : w - 24, capacity = Math.max(5, Math.floor((y + h - 30 - ty) / 11));
+    const sections = this.mode === 'recap'
+      ? [{ text: this.lesson.recap, color: PAL.ui.text }, { text: this.lesson.formula, color: PAL.teal[7] }, { text: 'IN REAL MODELS', small: true, color: PAL.ui.gold }, { text: this.lesson.real, color: PAL.ui.dim }]
+      : [...this.lesson.lines.map(text => ({ text, color: PAL.ui.text })), { text: this.lesson.formula, color: PAL.teal[7] }, { text: 'IN REAL MODELS', small: true, color: PAL.ui.gold }, { text: this.lesson.real, color: PAL.ui.dim }];
+    const pages = []; let rows = [];
+    for (const section of sections) {
+      const wrapped = wrapText(section.text, tw, section.small ? 'small' : 'body').map(text => ({ ...section, text }));
+      if (rows.length && rows.length + wrapped.length + 1 > capacity) { pages.push(rows); rows = []; }
+      if (rows.length) rows.push({ text: '', color: PAL.ui.text });
+      for (const row of wrapped) {
+        if (rows.length >= capacity) { pages.push(rows); rows = []; }
+        rows.push(row);
       }
     }
+    if (rows.length) pages.push(rows);
+    this.pages = pages; this.page = Math.min(this.page, pages.length - 1); this.layoutKey = key;
+    this.geom = { x, y, w, h, diagramW, diagramH, tx, ty, tw, split }; return this.geom;
+  }
+  update(dt, input) {
+    if (!this.active) return;
+    this.age += dt; this.layout(this.game.screen);
+    if (this.age < 0.2) return;
+    if (input.pressed('cancel')) { input.consume('cancel'); input.consume('pause'); this.game.audio.play('menu-back'); this.close(); return; }
+    if (input.repeat('left') && this.page > 0) { this.page--; this.game.audio.play('menu-move'); }
+    if (input.pressed('confirm') || input.repeat('right')) {
+      const confirm = input.pressed('confirm'); input.consume('confirm'); input.consume('right');
+      if (this.page + 1 < this.pages.length) { this.page++; this.game.audio.play('menu-move'); }
+      else if (confirm) { this.game.audio.play('select'); this.close(); }
+    }
+  }
+  draw(ctx, screen, t) {
+    if (!this.active) return;
+    const g = this.layout(screen), lift = panelLift(this.age, this.game.reducedMotion), y = g.y + lift;
+    drawScrim(ctx, screen); drawWindow(ctx, g.x, y, g.w, g.h, 'gold');
+    drawIcon(ctx, this.lesson.icon, g.x + 13, y + 13);
+    drawText(ctx, this.mode === 'recap' ? 'A LESSON IN FRIENDSHIP' : 'TECHNIQUE DISCOVERED', g.x + 28, y + 9, { font: 'small', color: PAL.ui.gold });
+    drawText(ctx, this.lesson.title, g.x + 28, y + 20);
+    const dx = g.x + 11, dy = y + 41;
+    drawWindow(ctx, dx - 2, dy - 2, g.diagramW + 4, g.diagramH + 4, 'glass');
+    drawLessonDiagram(ctx, { x: dx + 2, y: dy + 2, w: g.diagramW - 4, h: g.diagramH - 4 }, this.lesson.id, t, { reduced: this.game.reducedMotion });
+    let cy = dy + g.diagramH + 8;
+    for (const line of wrapText(this.lesson.diagramCaption, g.diagramW, 'small')) { drawText(ctx, line, dx, cy, { font: 'small', color: PAL.ui.dim }); cy += 7; }
+    let ty = g.ty + lift;
+    for (const row of this.pages[this.page]) { drawText(ctx, row.text, g.tx, ty, { font: row.small ? 'small' : 'body', color: row.color }); ty += 11; }
+    drawPageDots(ctx, screen.w / 2, y + g.h - 22, this.pages.length, this.page);
+    const touch = this.game.input.lastDevice === 'touch';
+    drawText(ctx, this.page + 1 === this.pages.length ? (touch ? 'A  Return to the isle' : 'Enter  Return to the isle') : (touch ? 'A  Next page' : 'Enter  Next page'), g.x + 12, y + g.h - 13, { font: 'small', color: PAL.ui.gold });
+    drawText(ctx, touch ? 'B  Close' : 'Esc  Close', g.x + g.w - 12, y + g.h - 13, { font: 'small', color: PAL.ui.dim, align: 'right' });
   }
 }
