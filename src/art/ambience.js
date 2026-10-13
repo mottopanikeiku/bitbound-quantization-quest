@@ -55,6 +55,8 @@ function moteSprite(biome, kind, frame) {
 function cloudSprite(variant) {
   return spriteCache(`ambience:cloud:${variant}`, 160, 88, (p) => {
     // Overlapping blobs are sampled as one union, so joins have no dark seams.
+    // Quiet solid interiors; dithering only softens the narrow penumbra.
+    // A checker across the whole shadow becomes ground noise after quantizing.
     const blobs = [[45, 43, 37, 21], [76, 34, 37, 26], [111, 47, 36, 22], [86, 62, 47, 19]];
     p.rect(0, 0, 160, 88, (x, y) => {
       let coverage = 0;
@@ -62,7 +64,7 @@ function cloudSprite(variant) {
         const dx = (x - cx - variant * 3) / rx, dy = (y - cy) / ry;
         coverage = Math.max(coverage, 1 - dx * dx - dy * dy);
       }
-      return coverage > 0 && bayer(x, y) < Math.min(0.72, coverage * 0.8) ? PAL.shadow : null;
+      return coverage > 0 && bayer(x, y) < Math.min(1, coverage * 5) ? PAL.shadow : null;
     });
   });
 }
@@ -122,7 +124,7 @@ export function createAmbience(biome, { reduced = false } = {}) {
           const wy = cy * 240 + hash2(cx, cy, 13) * 80;
           const x = Math.round(wx - camX), y = Math.round(wy - camY);
           if (x > width || x < -160 || y > height || y < -88) continue;
-          ctx.globalAlpha = alpha * (biome === 'spire' ? 0.07 : 0.105);
+          ctx.globalAlpha = alpha * (biome === 'spire' ? 0.045 : 0.07);
           ctx.drawImage(cloudSprite(mod(cx + cy, 2)), x, y);
         }
       }

@@ -453,8 +453,8 @@ export class Game {
   describe() {
     const s = this.state;
     const stats = this.stats();
-    const scene =
-      this.scene === this.battleScene ? 'battle' : this.scene === this.worldScene ? 'world' : this.scene === this.titleScene ? 'title' : this.scene === this.introScene ? 'intro' : 'ending';
+    const names = new Map([[this.battleScene, 'battle'], [this.worldScene, 'world'], [this.titleScene, 'title'], [this.introScene, 'intro'], [this.endingScene, 'ending']]);
+    const scene = names.get(this.scene) ?? 'gallery';
     const overlay = this._overlay();
     const parts = [`Scene ${scene}`, `HP ${s.hero.hp}/${stats.maxHp}`, `Bytes ${s.hero.bytes}/${stats.maxBytes}`, `Friends ${s.friends.length}/7`];
     if (overlay) parts.push(`Overlay ${overlay.constructor.name}`);
