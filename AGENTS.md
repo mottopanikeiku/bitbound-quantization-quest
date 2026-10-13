@@ -2,28 +2,41 @@
 
 An original educational browser RPG. No runtime agents, API keys, analytics, remote assets, or copyrighted franchise characters.
 
+## Architecture
+
+One 2D canvas at one pixel scale: 384×216 in landscape, 216×H (H 320–420) in portrait. Every scene lays out from `screen.w`/`screen.h`.
+
+| Area | Files |
+| --- | --- |
+| Engine and flow | `src/main.js`, `src/game.js`, `src/state.js` (save v3), `src/engine/{screen,input,util,font}.js`, `src/scenes/*` |
+| Art (procedural, cached) | `src/art/{palette,paint}.js` (master palette, alias-free `Pix` painter), `terrain`, `props`, `ambience`, `creatures`, `characters`, `portraits`, `backgrounds`, `vfx`, `transitions` |
+| Battle | `src/battle/{battle,battle-view,foes,spell,gridviz,timing}.js` on the math core `src/quantization.js` |
+| World | `src/world/{map,world,content,puzzles}.js` |
+| Interface | `src/ui/*` (windows, HUD, dialogue, lesson cards, Field Notes, pause, toasts) |
+| Teaching data | `src/content/lessons.js` (lessons, glossary, coach lines, facts, real-world sizes, primary sources) |
+| Audio | `src/audio/{audio,music}.js` (no AudioContext before a user gesture) |
+
+DEV-only routes (stripped from production): `?gallery=<name>` (every art/UI gallery; ↑/↓ gallery, ←/→ page), `?zone=0..6`, `?battle=<foeId>[&friends=N]`, `?scene=intro|ending`, plus `&nosave`. `window.__bitbound` is the Game; `#game[aria-label]` carries a live status line (`game.describe()`, `battle.describe()`, `world.describe()`).
+
 ## Bounded orchestration
 
-Use an integration owner and independent specialists: numerical research, deployment research, game/learning design, and adversarial review. Each slice gets an objective, owned files, a fixed interface, observable acceptance criteria and an artifact handoff. Do not let parallel workers edit the same file. The integration owner handles commits and consolidated verification after a wave, not competing mid-flight builds.
+Use one integration owner and parallel specialists with an exclusive file allowlist, a fixed interface contract and observable acceptance criteria; independent reviewers are read-only and report findings with reproductions. Do not let parallel workers edit the same file. The integration owner handles commits and consolidated verification after a wave, not competing mid-flight builds.
 
 This follows [Building effective agents](https://www.anthropic.com/engineering/building-effective-agents) and [How we built our multi-agent research system](https://www.anthropic.com/engineering/multi-agent-research-system): simple composable workflows, explicitly bounded delegation, primary-source research, artifact-based handoffs and end-state verification.
 
 ## Dispatch and acceptance
 
 - State one result, an exhaustive write allowlist, fixed interfaces/units, concrete player actions and required evidence. No unbounded child spawning or shared-file edits.
-- Record actual runtime provider/model identifiers. Agent names are not model provenance. Pin a discovered model selector when a specific model is requested; do not silently report fallback workers as that model.
-- Browser origins isolate saves, not builds. All previews of `dist/` share the same candidate: the lead freezes it during review and records the loaded JS/CSS identity. Source changes remain unverified candidates until the consolidated rebuild.
-- Separate implemented, observed-pass, observed-fail and not-checked. Numerical/source review is not a seven-guardian playthrough; generated audio is not human listening; a successful CI deployment is not gameplay verification.
-- Only the integration owner builds/tests/formats after a wave, resolves contradictory findings, pushes commits and approves publication. Play the final candidate through all seven friendships and ending; verify both restart paths, retained feedback, portrait controls, earned saves and all music scenes.
-
-These contracts adapt [OpenAI's GPT-6 prompting guidance](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6-astra#prompting-best-practices), [Codex prompting guidance](https://developers.openai.com/cookbook/examples/gpt-5/codex_prompting_guide), and the Anthropic references above. Family/model-specific guidance is a starting point, not empirically optimal Sol prompting or a reason to add a runtime agent framework.
-
+- Record actual runtime provider/model identifiers. Agent names are not model provenance: role independence (a reviewer that did not build the code) is not model-family independence unless the runtime identifiers differ.
+- Workers share one tree: keep every file importable at all times. Reviewers serve without hot reload so their page never resets mid-fight: a `/tmp` Vite config with `root` set to the repo, `server.hmr: false` and `server.watch.ignored: ['**/*']`.
+- Separate implemented, observed-pass, observed-fail and not-checked. Numerical/source review is not a playthrough; generated audio is not human listening; a successful CI deployment is not gameplay verification.
+- Only the integration owner builds/tests after a wave, resolves contradictory findings, commits and approves publication. Play the final candidate from New Game through all seven friendships and the ending with real keyboard input (a read-only observer may time inputs; never inject state); verify save/Continue, restart, defeat-to-camp, portrait touch controls, and every music scene.
 
 ## Quality contract
 
-- Quantization must affect actual gameplay through computed reconstruction, toy forward outputs and declared packet costs. Damage/byte charge are fictional game rules, never task accuracy/device memory.
-- Verify technical claims against primary papers/official docs. Keep beginner explanations and inspectable equations consistent.
-- Adversarial review covers both mathematical correctness and novice gameplay: discoverability, meaningful choices, retry feedback, mobile/keyboard accessibility, and transfer beyond the toy experiment.
-- Original procedural pixel art and multi-voice music; no external font/art/audio requests. Respect reduced motion without disabling gameplay. Title Enter explicitly starts with music; M mutes.
-- Play the actual RPG: held WASD/camera/collision, physical NPCs, contact encounters, timed attacks, foe turns, guard/scan/snacks, camp recovery, progression, save/restart and ending. No click-travel, mandatory forms, research articles or quizzes. Inspect desktop and reflowed mobile screenshots; numerical tests do not replace playthroughs.
+- Quantization must affect play through computed reconstruction on visible grids: values snap to levels the player can see, and fidelity/damage follow from the resulting error. Damage, HP and byte charge are fictional rules, never task accuracy or device memory; no hidden technique bonuses.
+- Verify technical claims against primary sources (ledger in `src/content/lessons.js` `SOURCES`); keep beginner copy, diagrams and battle labels numerically consistent with the code.
+- Each guardian is a puzzle its zone's technique solves better than the best reachable naive configuration, without knife-edge planted data; the result of each new kind of cast stays on screen until the player continues.
+- Original procedural pixel art (one scale, top-left light, cluster shading, selective outlines) and original multi-voice music; no external font/art/audio requests. Respect reduced motion without changing gameplay timing. Title Enter starts music; M mutes.
+- Keyboard and touch for everything; no click-travel, mandatory forms, research articles or quizzes. Inspect desktop and portrait screenshots; numerical tests do not replace playthroughs.
 - Use small meaningful commits. Generated dependencies and build output stay ignored.
