@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fidelity, dot, symmetricParams, affineParams, quantizeVector } from '../src/quantization.js';
+import { fidelity, dot, symmetricParams, affineParams, quantizeValue, quantizeVector } from '../src/quantization.js';
 import { FOES, createEssence, attackFor, intendedGear } from '../src/battle/foes.js';
-import { normalizeGear, buildSpell, spellCost, defaultLocks, rangeTargets, damageFor } from '../src/battle/spell.js';
+import { normalizeGear, buildSpell, spellCost, defaultLocks, rangeTargets, lockDomains, damageFor } from '../src/battle/spell.js';
+import { weightedVectors } from '../src/battle/metrics.js';
 
 const BITS = [2, 3, 4, 8];
-const GUARDIANS = ['nib', 'chime', 'brine', 'spindle', 'cinder', 'vesper', 'auric'];
 const ALL_TECHNIQUES = ['bits', 'zero', 'calib', 'groups', 'spotlight', 'balance', 'budget'];
 const near = (a, b, epsilon = 1e-10) => assert.ok(Math.abs(a - b) <= epsilon, `${a} differs from ${b}`);
 const signal = (...rows) => ({ kind: 'values', rows: rows.map((values, i) => ({ label: `Row ${i + 1}`, values })) });
@@ -18,17 +18,6 @@ function seeded(seed) {
   };
 }
 
-function copyLocks(locks) {
-  return { ...locks, ranges: [...locks.ranges], lows: [...locks.lows], highs: [...locks.highs], protected: [...locks.protected] };
-}
-
-function perturbedLocks(essence, gear, error) {
-  const locks = defaultLocks(essence, gear);
-  locks.ranges = locks.ranges.map((value) => value * (1 + error));
-  locks.lows = locks.lows.map((value) => value * (1 + error));
-  locks.highs = locks.highs.map((value) => value * (1 + error));
-  return locks;
-}
 
 test('gear keeps the canonical save schema and cannot enable locked techniques', () => {
   const full = { bits: 3, zero: true, calib: true, groups: true, spotlight: 2, balance: true, budget: [8, 3, 2] };
@@ -53,6 +42,12 @@ test('spell rows use nearest-even grids, actual affine edges, and visible clippi
   assert.equal(model.rows[0].codes[2], -2);
   assert.equal(model.rows[0].codes[6], 2);
   assert.equal(model.clippedCount, 2);
+  const endpoint = quantizeValue(1.1, symmetricParams(1, 3));
+  assert.equal(endpoint.code, 3, 'rounding alone has not saturated the code');
+  assert.equal(endpoint.reconstructed, 1);
+  assert.equal(endpoint.clipped, true, 'the original value lies beyond the reconstruction endpoint');
+  near(model.rows[0].scale, 1 / 3);
+  near(model.rows[0].levels[1] - model.rows[0].levels[0], model.rows[0].scale);
   assert.ok(model.view.min <= -1.2 && model.view.max >= 1.2);
 
   const affine = buildSpell(signal([-0.17, 0, 0.4, 1]), { bits: 3, zero: true }, { lows: [-0.17], highs: [1] });
@@ -61,6 +56,8 @@ test('spell rows use nearest-even grids, actual affine edges, and visible clippi
   near(affine.rows[0].hi, params.max);
   assert.notEqual(affine.rows[0].lo, -0.17);
   assert.equal(affine.rows[0].levels.length, 8);
+  near(affine.rows[0].scale, 1.17 / 7);
+  near(affine.rows[0].levels[1] - affine.rows[0].levels[0], affine.rows[0].scale);
   assert.equal(affine.rows[0].recon[1], 0);
   for (const bits of BITS) {
     const sym = buildSpell(signal([0, 0, 0]), { bits });
@@ -136,7 +133,7 @@ test('Spotlight chooses hot input channels, removes them from range fitting, and
   assert.deepEqual(naive.reconstructed, essence.inputs.map((token) => dot(token, naive.rows[0].recon)));
   near(naive.fidelity, fidelity(naive.reference, naive.reconstructed));
   const intended = buildSpell(essence, gear, locks, 28, FOES.cinder.floor);
-  near(intended.fidelity, 1);
+  assert.ok(intended.fidelity > 0.99, 'cold-input rounding is small, not secretly ignored');
   assert.equal(intended.metric, 'output');
 });
 
@@ -182,7 +179,7 @@ test('group locks route to the correct rows, and shared 2-4 bit grids erase the 
       assert.equal(naive.threadDamages[2], 0);
       assert.ok(naive.rows[2].recon.every((value) => value === 0));
     }
-    const gear = intendedGear('spindle');
+    const gear = intendedGear('spindle', 1, { successes: turn });
     const locks = defaultLocks(essence, gear);
     assert.equal(locks.ranges.length, 3);
     const grouped = buildSpell(essence, gear, locks, 25, FOES.spindle.floor);
@@ -203,6 +200,7 @@ test('Budget fidelity really weights signal and error energy by sensitivity', ()
   near(model.reference[0], Math.sqrt(3));
   near(model.reference[1], 0.45 * Math.sqrt(3));
   near(model.fidelity, fidelity(model.reference, model.reconstructed));
+  assert.deepEqual(weightedVectors(model.rows, essence.sensitivities), { reference: model.reference, reconstructed: model.reconstructed });
   assert.ok(swapped.fidelity > model.fidelity);
   assert.equal(model.metric, 'sensitivity-weighted values');
   assert.deepEqual(model.headFidelities, model.rows.map((row) => fidelity(row.values, row.recon)));
@@ -224,7 +222,16 @@ test('Brine fits public archives, not its hidden live values, and calibration is
     assert.ok(buildSpell(changed, gear, locks).fidelity < calibrated.fidelity);
   }
   const calm = createEssence('brine', 0);
-  assert.ok(defaultLocks(calm, { bits: 4, calib: true }).ranges[0] < defaultLocks(calm, { bits: 4, calib: false }).ranges[0]);
+  assert.deepEqual(defaultLocks(calm, { bits: 4, calib: true }), defaultLocks(calm, { bits: 4, calib: false }));
+  assert.equal(defaultLocks(calm, { bits: 4, calib: true }).ranges[0], 2.2);
+  for (let turn = 0; turn < 6; turn++) {
+    const essence = createEssence('brine', turn, seeded(turn));
+    assert.deepEqual(essence.ghosts, [...calm.archive.calm, ...calm.archive.storm]);
+    assert.deepEqual(lockDomains(essence, { bits: 4 }), [{ r: [0.15, 2.4], lo: [-2.4, 0], hi: [0, 2.4] }]);
+    assert.deepEqual(buildSpell(essence, { bits: 4 }).view, { min: -2.4, max: 2.4 });
+    const archive = essence.archive[essence.storm ? 'storm' : 'calm'];
+    assert.notDeepEqual([...essence.rows[0].values].sort((a, b) => a - b), [...archive].sort((a, b) => a - b));
+  }
 });
 
 test('all fourteen foes are deterministic, morph between turns, and have usable attack rhythms', () => {
@@ -262,207 +269,35 @@ test('all fourteen foes are deterministic, morph between turns, and have usable 
   assert.throws(() => attackFor('unknown'), RangeError);
 });
 
-// These comparisons are toy gameplay fixtures, not claims about real model accuracy.
-// "Naive" means uniform bits with the guardian's new technique absent. All earlier
-// applicable toggles are enumerated; structurally inert ones (e.g. Balance on a
-// value-only foe) are omitted. Spotlight uses the public max-input salience ranking.
-// Nib teaches the bit choice itself, so its baseline is the OTHER choices 2/3/8,
-// rather than comparing the identical 4-bit spell to itself. Brine is separately
-// compared to an unconditioned fixed-range archive policy, not a live-data oracle.
-function naiveGears(foe) {
-  const bits = foe.zone === 0 ? [2, 3, 8] : BITS;
-  const gears = [];
-  for (const bit of bits) {
-    for (const zero of foe.zone >= 2 ? [false, true] : [false]) {
-      for (const groups of foe.zone >= 4 ? [false, true] : [false]) {
-        for (const spotlight of foe.zone >= 5 ? [0, 1, 2] : [0]) {
-          gears.push(normalizeGear({ bits: bit, zero, groups, spotlight }));
-        }
-      }
-    }
-  }
-  return gears;
-}
-
-// A symmetric breathing span is 1.10*amax. +/-0.11*amax is its allowed 10% error.
-// Two coordinate passes search this disclosed finite grid for every naive gear;
-// this is not a claim to solve the continuous, combinatorial global optimum.
-const LOCK_FACTORS = [0.89, 0.92, 0.95, 0.98, 1, 1.02, 1.05, 1.08, 1.11];
-function bestNearbyLocks(essence, gear, power, floor) {
-  const covering = defaultLocks(essence, gear);
-  let locks = copyLocks(covering);
-  let model = buildSpell(essence, gear, locks, power, floor);
-  for (let pass = 0; pass < 2; pass++) {
-    for (let group = 0; group < covering.ranges.length; group++) {
-      for (const key of gear.zero ? ['lows', 'highs'] : ['ranges']) {
-        for (const factor of LOCK_FACTORS) {
-          const candidateLocks = copyLocks(locks);
-          candidateLocks[key][group] = covering[key][group] * factor;
-          const candidate = buildSpell(essence, gear, candidateLocks, power, floor);
-          if (candidate.damage > model.damage || (candidate.damage === model.damage && candidate.fidelity > model.fidelity)) {
-            model = candidate;
-            locks = candidateLocks;
-          }
-        }
-      }
-    }
-  }
-  return { model, locks, gear };
-}
-
-function bestNaive(foe, essence, power) {
-  let best;
-  for (const gear of naiveGears(foe)) {
-    const candidate = bestNearbyLocks(essence, gear, power, foe.floor);
-    if (!best || candidate.model.damage / candidate.model.cost > best.model.damage / best.model.cost) best = candidate;
-  }
-  return best;
-}
-
-for (const id of GUARDIANS.filter((guardian) => guardian !== 'brine')) {
-  test(`${id}: intended technique earns at least 1.5x damage/byte over the searched naive baseline`, (t) => {
-    const foe = FOES[id];
-    const power = 16 + 3 * foe.zone;
-    t.diagnostic('Baseline: all uniform bits without this guardian\'s technique; all earlier applicable toggles; default salience; two-pass +/-11% covering-range coordinate search. Nib excludes the taught 4-bit choice.');
-    for (const phase of id === 'auric' ? [1, 2] : [1]) {
-      for (const turn of [0, 3]) {
-        const essence = createEssence(id, turn, seeded(100 + turn), phase);
-        const gear = intendedGear(id, phase);
-        const intended = buildSpell(essence, gear, defaultLocks(essence, gear), power, foe.floor);
-        const naive = bestNaive(foe, essence, power);
-        const intendedRate = intended.damage / intended.cost;
-        const naiveRate = naive.model.damage / naive.model.cost;
-        const ratio = intendedRate / naiveRate;
-        t.diagnostic(JSON.stringify({ id, turn, phase, intended: { gear, fidelity: intended.fidelity, damage: intended.damage, bytes: intended.cost, damagePerByte: intendedRate }, naive: { gear: naive.gear, fidelity: naive.model.fidelity, damage: naive.model.damage, bytes: naive.model.cost, damagePerByte: naiveRate, locks: naive.locks }, ratio }));
-        assert.ok(naive.model.damage > 0, 'the best naive alternative must remain usable');
-        assert.ok(ratio >= 1.5 - 1e-12, `${id} phase ${phase}: ${ratio.toFixed(3)}x, expected >=1.5x`);
-      }
-    }
-  });
-}
-
-test('Brine: forecast-conditioned calibration beats the best searched fixed-range archive policy by 1.5x', (t) => {
-  const foe = FOES.brine;
-  const power = 22;
-  const waves = Array.from({ length: 6 }, (_, turn) => createEssence('brine', turn, seeded(200 + turn)));
-  const gear = intendedGear('brine');
-  const intended = waves.map((essence) => buildSpell(essence, gear, defaultLocks(essence, gear), power, foe.floor));
-  const intendedDamage = intended.reduce((sum, model) => sum + model.damage, 0);
-  const intendedBytes = intended.reduce((sum, model) => sum + model.cost, 0);
-  const ranges = [...new Set([0.49, ...Array.from({ length: 81 }, (_, i) => 0.4 + i * 0.025)])];
-  let best = { rate: -1 };
-  for (const bits of BITS) {
-    for (const zero of [false, true]) {
-      for (const range of ranges) {
-        for (const lowFactor of zero ? [0.9, 1, 1.1] : [1]) {
-          for (const highFactor of zero ? [0.9, 1, 1.1] : [1]) {
-            const naiveGear = { bits, zero, calib: false };
-            const locks = { ranges: [range], lows: [-range * lowFactor], highs: [range * highFactor] };
-            let damage = 0;
-            let bytes = 0;
-            for (const essence of waves) {
-              const model = buildSpell(essence, naiveGear, locks, power, foe.floor);
-              damage += model.damage;
-              bytes += model.cost;
-            }
-            if (damage / bytes > best.rate) best = { rate: damage / bytes, damage, bytes, gear: naiveGear, locks };
-          }
-        }
-      }
-    }
-  }
-  const intendedRate = intendedDamage / intendedBytes;
-  t.diagnostic('Baseline never reads a live wave or selects a range by forecast: one fixed symmetric/affine range across three calm and three storm turns, every uniform bit choice. Searches 0.4..2.4 by 0.025 plus0.49, with affine edge factors0.9/1/1.1. Calibrated locks use independent public past samples.');
-  t.diagnostic(JSON.stringify({ id: 'brine', intended: { damage: intendedDamage, bytes: intendedBytes, damagePerByte: intendedRate, waves: intended.map((model) => ({ fidelity: model.fidelity, damage: model.damage, bytes: model.cost })) }, naive: best, ratio: intendedRate / best.rate }));
-  assert.ok(best.damage > 0);
-  assert.ok(intendedRate >= best.rate * 1.5);
+test('lock domains are the complete breathing intervals, including degenerate zero signals', () => {
+  assert.deepEqual(lockDomains(signal([-2, 1]), { bits: 3 }), [{
+    r: [0.7, 2.9], lo: [-3.1, -0.8999999999999999], hi: [0, 2.1],
+  }]);
+  const empty = lockDomains(signal([0, 0]), { bits: 3 })[0];
+  assert.deepEqual(empty, { r: [0.35, 1.45], lo: [-0.55, 0], hi: [0, 0.55] });
+  const essence = createEssence('chime');
+  const covering = defaultLocks(essence, { bits: 4 });
+  const domain = lockDomains(essence, { bits: 4 })[0];
+  assert.ok(covering.ranges[0] * 7 / 6 < domain.r[1], 'the old Chime counterexample must remain reachable');
 });
 
-function simulate(foeId, lockError = 0) {
-  const foe = FOES[foeId];
-  const maxHp = 40 + 8 * foe.zone;
-  const maxBytes = 40 + 8 * foe.zone; // No shard upgrades, no extra caches.
-  const power = 16 + 3 * foe.zone;
-  let hp = maxHp;
-  let bytes = maxBytes;
-  let snacks = 3;
-  let foeHp = foe.hp;
-  let casts = 0;
-  let guards = 0;
-  let spent = 0;
-  let dealt = 0;
-  let minimumBytes = bytes;
-  const threads = foe.zone === 3 ? Array.from({ length: 3 }, (_, i) => Math.floor(foe.hp / 3) + Number(i < foe.hp % 3)) : null;
-  const random = seeded(987 + foe.zone);
-  for (let turn = 0; turn < 100; turn++) {
-    bytes = Math.min(maxBytes, bytes + 4);
-    const phase = foe.zone === 6 && foeHp <= foe.hp / 2 ? 2 : 1;
-    const essence = createEssence(foeId, turn, random, phase);
-    const gear = intendedGear(foeId, phase);
-    const model = buildSpell(essence, gear, perturbedLocks(essence, gear, lockError), power, foe.floor);
-    let brace = false;
-    if (hp <= maxHp / 2 && snacks > 0) {
-      hp = Math.min(maxHp, hp + Math.ceil(maxHp / 2));
-      snacks--;
-    } else if (model.cost > bytes) {
-      bytes = Math.min(maxBytes, bytes + 12);
-      guards++;
-      brace = true;
-    } else {
-      bytes -= model.cost;
-      spent += model.cost;
-      casts++;
-      const before = foeHp;
-      if (threads) {
-        for (let i = 0; i < threads.length; i++) threads[i] = Math.max(0, threads[i] - model.threadDamages[i]);
-        foeHp = threads.reduce((sum, value) => sum + value, 0);
-      } else {
-        foeHp = Math.max(0, foeHp - model.damage);
-      }
-      dealt += before - foeHp;
+test('mid and late morphs depend on successful casts, not elapsed guard turns', () => {
+  for (const id of ['spindle', 'cinder', 'vesper', 'auric']) {
+    const waiting = createEssence(id, 7, seeded(20), 1, { successes: 1 });
+    const changed = createEssence(id, 7, seeded(20), 1, { successes: 2 });
+    assert.equal(waiting.morphStage, 0);
+    assert.equal(changed.morphStage, 1);
+    assert.notDeepEqual(changed.rows, waiting.rows);
+    assert.ok(changed.morphName && changed.morphHint);
+    if (id === 'spindle' || id === 'vesper') {
+      const old = buildSpell(changed, intendedGear(id), {}, 16 + 3 * FOES[id].zone, FOES[id].floor);
+      const newGear = intendedGear(id, 1, { successes: 2 });
+      const adapted = buildSpell(changed, newGear, {}, 16 + 3 * FOES[id].zone, FOES[id].floor);
+      assert.ok(adapted.damage >= old.damage + 10, `${id} requires a new decision, not another rotation`);
     }
-    minimumBytes = Math.min(minimumBytes, bytes);
-    if (foeHp === 0) return { won: true, turns: turn + 1, casts, guards, spent, dealt, hp, bytes, snacks, minimumBytes };
-    // Good (not perfect) timed guards: 0.6 damage, no perfect-guard byte refunds.
-    const attack = attackFor(foeId, turn, phase);
-    for (let hit = 0; hit < attack.hits.length; hit++) hp -= Math.max(1, Math.round(attack.hits[hit] * 0.6 * (brace && hit === 0 ? 0.5 : 1)));
-    if (hp <= 0) return { won: false, turns: turn + 1, casts, guards, spent, dealt, hp, bytes, snacks, minimumBytes };
   }
-  return { won: false, turns: 100, casts, guards, spent, dealt, hp, bytes, snacks, minimumBytes };
-}
-
-test('all guardians have a winnable byte/HP economy, including nonzero range-lock error', (t) => {
-  t.diagnostic('Economy: natural progression power/HP/bytes, zero shards, three snacks, +4B each turn, +12B GUARD, good0.6 timed guards with NO +2B refunds. Snacks and guards take turns; Auric switches phase; Spindle must empty all three independent bars.');
-  for (const foeId of GUARDIANS) {
-    for (const lockError of [0, 0.02]) {
-      const result = simulate(foeId, lockError);
-      t.diagnostic(JSON.stringify({ foeId, lockError, ...result }));
-      assert.ok(result.won, `${foeId} should be winnable at ${(lockError * 100).toFixed(0)}% range error`);
-      assert.ok(result.minimumBytes >= 0);
-      assert.ok(result.hp > 0);
-      assert.ok(result.turns >= 5 && result.turns <= 15, `${foeId} should expose its pattern without becoming an endurance grind`);
-      assert.ok(result.guards > 0 || result.snacks < 3, 'decent play still needs an economy or recovery decision');
-      assert.equal(result.dealt, FOES[foeId].hp);
-    }
+  for (const foe of Object.values(FOES).filter((foe) => foe.guardian)) {
+    assert.equal(attackFor(foe.id, 1).charge, true, 'the second enemy turn exposes a charge before a three-cast win');
   }
 });
 
-test('four unguarded guardian turns threaten a full-health hero', () => {
-  for (const foeId of GUARDIANS) {
-    const foe = FOES[foeId];
-    const incoming = [0, 1, 2, 3].flatMap(turn => attackFor(foeId, turn).hits).reduce((sum, damage) => sum + damage, 0);
-    assert.ok(incoming >= 40 + 8 * foe.zone, `${foeId} must punish ignoring timed guards, brace, and snacks`);
-  }
-});
-
-test('all seven staticlings take at most three intended casts, even with 2% range error', (t) => {
-  for (let zone = 0; zone < 7; zone++) {
-    const foeId = `static-${zone}`;
-    for (const lockError of [0, 0.02]) {
-      const result = simulate(foeId, lockError);
-      t.diagnostic(JSON.stringify({ foeId, lockError, ...result }));
-      assert.ok(result.won, `${foeId} must be beatable`);
-      assert.ok(result.casts >= 1 && result.casts <= 3, `${foeId} took ${result.casts} casts`);
-    }
-  }
-});

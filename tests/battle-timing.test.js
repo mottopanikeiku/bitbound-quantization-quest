@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { breathing, eventElapsed, guardJudgement, GUARD_WINDOWS } from '../src/battle/timing.js';
+import { breathing, eventElapsed, guardJudgement, guardFeedback, GUARD_WINDOWS, TEACHING_GUARD_WINDOWS } from '../src/battle/timing.js';
 
 test('guard windows include both fair boundaries and stack brace only once', () => {
   for (const error of [-0.07, 0, 0.07]) assert.deepEqual(guardJudgement(error), { grade: 'perfect', multiplier: 0.25, bytes: 2 });
@@ -10,6 +10,17 @@ test('guard windows include both fair boundaries and stack brace only once', () 
   assert.equal(guardJudgement(0.1, true).multiplier, 0.3);
   assert.equal(guardJudgement(1, true).multiplier, 0.5);
   assert.deepEqual(GUARD_WINDOWS, { perfect: 0.07, good: 0.16 });
+});
+
+test('first-beat teaching windows widen once without changing ordinary guards', () => {
+  assert.equal(guardJudgement(0.12, false, TEACHING_GUARD_WINDOWS).grade, 'perfect');
+  assert.equal(guardJudgement(-0.24, false, TEACHING_GUARD_WINDOWS).grade, 'good');
+  assert.equal(guardJudgement(0.24001, false, TEACHING_GUARD_WINDOWS).grade, 'miss');
+  assert.equal(guardJudgement(0.12).grade, 'good');
+  assert.equal(guardJudgement(0.24).grade, 'miss');
+  assert.equal(guardFeedback(-0.4, guardJudgement(-0.4)), 'EARLY');
+  assert.equal(guardFeedback(0.4, guardJudgement(0.4)), 'LATE');
+  assert.equal(guardFeedback(0, guardJudgement(0)), 'PERFECT');
 });
 
 test('breathing reaches both ends and Shift can halve elapsed speed without changing range', () => {
