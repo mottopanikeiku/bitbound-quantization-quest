@@ -1,4 +1,4 @@
-import { drawSprite } from './art.js';
+import { drawSprite, drawNoiseSprite } from './art.js';
 
 export const LOCATIONS = Object.freeze([
   Object.freeze({ id: 0, x: 78, y: 200 }),
@@ -12,13 +12,47 @@ export const LOCATIONS = Object.freeze([
 
 const WIDTH = 480;
 const HEIGHT = 288;
-const STEP = 8;
+const ZOOM = 2;
+const VIEW_WIDTH = WIDTH / ZOOM;
+const VIEW_HEIGHT = HEIGHT / ZOOM;
+const WALK_SPEED = 38;
+const DASH_SPEED = 60;
 const KINDS = ['sprout', 'crystal', 'tide', 'moth', 'ember', 'wisp', 'dragon'];
-const BIOMES = ['the meadow', 'the crystal grove', 'the tide pool', 'the lunar heights', 'the forge', 'the library ruins', 'the jade tower'];
-// All path junctions and arrivals share the player's eight-pixel movement lattice.
-const ARRIVALS = [
-  { x: 78, y: 216 }, { x: 110, y: 104 }, { x: 206, y: 200 },
-  { x: 286, y: 96 }, { x: 366, y: 208 }, { x: 270, y: 256 }, { x: 406, y: 80 },
+const GUARDIANS = ['Nib', 'Chime', 'Brine', 'Spindle', 'Cinder', 'Vesper', 'Auric'];
+const ZONES = ['Bitleaf Meadow', 'Offset Grove', 'Calibration Cove', 'Channel Heights', 'Inference Forge', 'Outlier Archives', 'Precision Spire'];
+const GREETINGS = [
+  'The garden is singing again. Take a leaf for the road!',
+  'A clear note at last! The long bridge leads to Brine.',
+  'Quiet water, happy tadpoles. The northern steps lead to Spindle.',
+  'The stars are steady. Cinder waits across the eastern river.',
+  'The forge is warm again. Vesper lives in the southern ruins.',
+  'Every book has its voice. The last beacon is northeast.',
+  'Seven friends, one island. There is always a place for you here.',
+];
+const CAMPS = [
+  { kind: 'camp', id: 'shore-camp', name: 'Shore Camp', x: 60, y: 234, radius: 17 },
+  { kind: 'camp', id: 'crossroads-camp', name: 'Crossroads Camp', x: 246, y: 216, radius: 17 },
+  { kind: 'camp', id: 'heights-camp', name: 'Highland Camp', x: 344, y: 99, radius: 17 },
+];
+const PICKUPS = [
+  { kind: 'pickup', id: 'cache-meadow', x: 133, y: 230, radius: 14 },
+  { kind: 'pickup', id: 'cache-grove', x: 139, y: 107, radius: 14 },
+  { kind: 'pickup', id: 'cache-tide', x: 246, y: 179, radius: 14 },
+  { kind: 'pickup', id: 'cache-heights', x: 270, y: 108, radius: 14 },
+  { kind: 'pickup', id: 'cache-forge', x: 390, y: 220, radius: 14 },
+  { kind: 'pickup', id: 'cache-archive', x: 308, y: 257, radius: 14 },
+  { kind: 'pickup', id: 'cache-tower', x: 438, y: 83, radius: 14 },
+];
+const SIGNS = [
+  { kind: 'dialogue', id: 'crossroads-sign', x: 131, y: 220, radius: 14,
+    text: 'North: Offset Grove. East: Calibration Cove. Gold lanterns mark your next friend.' },
+];
+const NOISE_SPAWNS = [
+  { id: 0, x: 144, y: 218, roam: 16 }, { id: 1, x: 151, y: 115, roam: 13 },
+  { id: 2, x: 245, y: 163, roam: 15 }, { id: 3, x: 318, y: 103, roam: 16 },
+  { id: 4, x: 407, y: 192, roam: 16 }, { id: 5, x: 333, y: 244, roam: 14 },
+  { id: 6, x: 434, y: 99, roam: 13 }, { id: 0, x: 97, y: 144, roam: 14 },
+  { id: 4, x: 337, y: 224, roam: 15 },
 ];
 const COAST = [
   [28, 162], [38, 162], [38, 132], [46, 132], [46, 106], [58, 106], [58, 70],
@@ -444,9 +478,9 @@ function tower(ctx, restored) {
   }
 }
 
-/** A dependency-free island. Input ownership stops at its canvas; the host owns keyboard controls. */
+/** Scrolling island simulation. The host owns input, pause state, and the single animation loop. */
 export class IslandWorld {
-  constructor(canvas, { onEncounter = () => {}, onMove = () => {}, onLocked = () => {} } = {}) {
+  constructor(canvas, { onEncounter = () => {}, onInteract = () => {}, onMove = () => {} } = {}) {
     this.canvas = canvas;
     canvas.width = WIDTH;
     canvas.height = HEIGHT;
@@ -454,64 +488,83 @@ export class IslandWorld {
     if (!this.ctx) throw new Error('Bitbound needs a browser with a 2D canvas.');
     this.ctx.imageSmoothingEnabled = false;
     this.onEncounter = onEncounter;
+    this.onInteract = onInteract;
     this.onMove = onMove;
-    this.onLocked = onLocked;
-    this._position = { x: 62, y: 216 };
+    this._position = { kind: 'player', x: 62, y: 216, depth: 216 };
+    this._companion = { kind: 'companion', id: -1, x: 62, y: 216, depth: 216 };
     this._completed = new Set();
+    this._collected = new Set();
     this._frontier = 0;
+    this._zone = 0;
     this._destroyed = false;
     this._phase = 0;
-    this._stepPose = 0;
+    this._walkDistance = 0;
+    this._facing = 'south';
     this._playerPose = 0;
-    this._raf = 0;
+    this._contactCooldown = 2;
+    this._interactionCooldown = 0;
+    this._activeEncounter = null;
+    this._camera = { x: 0, y: HEIGHT - VIEW_HEIGHT };
+    this._trailX = new Float32Array(128);
+    this._trailY = new Float32Array(128);
+    this._trailHead = 0;
+    this._trailCount = 0;
+    this._random = randomSource(0x501ace);
     this._props = [];
     this._pathStones = [];
     this._terrain = surface();
     this._progress = surface();
     this._markers = surface();
-    this._atlas = surface(192, 192);
+    this._atlas = surface(192, 288);
+    this._noiseAtlas = surface(126, 36);
     this._makeTerrain();
     this._makeAtlas();
-    this._entities = this._props.concat(LOCATIONS.map((location) => ({
-      guardian: location.id, depth: location.y, x: location.x, y: location.y,
-    }))).sort((a, b) => a.depth - b.depth);
+    this._enemies = NOISE_SPAWNS.map((spawn, index) => ({
+      ...spawn, kind: 'noise', uid: `noise-${index}`, depth: spawn.y,
+      homeX: spawn.x, homeY: spawn.y, targetX: spawn.x, targetY: spawn.y,
+      turnTimer: 0, chasing: false, defeated: false,
+    }));
+    this._guardians = LOCATIONS.map((location) => ({
+      ...location, kind: 'guardian', depth: location.y, radius: 22,
+    }));
+    const camps = CAMPS.map((camp) => ({ ...camp, depth: camp.y }));
+    const pickups = PICKUPS.map((pickup) => ({ ...pickup, depth: pickup.y }));
+    this._interactables = [...this._guardians, ...camps, ...pickups, ...SIGNS];
+    this._entities = [
+      ...this._props, ...this._guardians, ...camps, ...pickups,
+      ...this._enemies, this._position, this._companion,
+    ];
     this._media = window.matchMedia('(prefers-reduced-motion: reduce)');
     this._reducedMotion = this._media.matches;
-    this._tick = (time) => {
-      this._raf = 0;
-      if (this._destroyed || this._reducedMotion || document.hidden) return;
-      const phase = Math.floor(time / 420) % 8;
-      if (phase !== this._phase) {
-        this._phase = phase;
-        this._render();
-      }
-      this._raf = window.requestAnimationFrame(this._tick);
-    };
-    this._onVisibility = () => this._syncAnimation();
-    this._onMotion = (event) => {
-      this._reducedMotion = event.matches;
-      this._syncAnimation();
-    };
-    this._onClick = (event) => {
-      const bounds = canvas.getBoundingClientRect();
-      if (!bounds.width || !bounds.height) return;
-      const x = (event.clientX - bounds.left) * WIDTH / bounds.width;
-      const y = (event.clientY - bounds.top) * HEIGHT / bounds.height;
-      const id = this._nearest(x, y, 40);
-      if (id !== -1) this.travel(id);
-    };
-    canvas.setAttribute('role', 'img');
-    canvas.addEventListener('click', this._onClick);
-    document.addEventListener('visibilitychange', this._onVisibility);
-    this._media.addEventListener('change', this._onMotion);
+    canvas.setAttribute('role', 'application');
+    this._resetTrail();
     this.setProgress([]);
-    this._syncAnimation();
+    this.render(0);
   }
 
   _makeAtlas() {
     const ctx = this._atlas.getContext('2d');
     for (let id = 0; id < KINDS.length; id += 1) drawSprite(ctx, KINDS[id], id * 24, 0);
     for (let pose = 0; pose < 8; pose += 1) drawSprite(ctx, 'player', 168, pose * 24, 1, pose);
+    // Extend the original side portraits with two actual walking strides.
+    for (let pose = 8; pose < 12; pose += 1) {
+      const left = pose < 10;
+      const stride = pose % 2;
+      const top = pose * 24;
+      drawSprite(ctx, 'player', 168, top, 1, left ? 6 : 7);
+      ctx.clearRect(168, top + 20, 24, 4);
+      for (const [x, y] of [[stride ? 10 : 8, 20], [stride ? 12 : 14, 21]]) {
+        const legX = 168 + (left ? 24 - x - 4 : x);
+        rect(ctx, legX, top + y, 3, 3, '#35433a');
+        rect(ctx, legX + 1, top + y, 1, 2, '#49675a');
+        rect(ctx, legX - (left ? 1 : 0), top + y + 1, 4, 2, '#35433a');
+        rect(ctx, legX + (left ? 0 : 1), top + y + 1, 2, 1, '#aa8253');
+      }
+    }
+    const noise = this._noiseAtlas.getContext('2d');
+    for (let id = 0; id < KINDS.length; id += 1) {
+      for (let frame = 0; frame < 2; frame += 1) drawNoiseSprite(noise, id, id * 18, frame * 18, 1, frame);
+    }
   }
 
   _addProp(x, y, width, height, depth, paint, restoreId = -1) {
@@ -703,9 +756,37 @@ export class IslandWorld {
       rect(mask, x - 3, y - 5, 7, 7, '#000000');
     }
     const pixels = mask.getImageData(0, 0, WIDTH, HEIGHT).data;
+    const clear = new Uint8Array(WIDTH * HEIGHT);
+    for (let y = 3; y < HEIGHT - 3; y += 1) {
+      for (let x = 4; x < WIDTH - 4; x += 1) {
+        const index = y * WIDTH + x;
+        clear[index] = pixels[index * 4] > 127
+          && pixels[((y - 2) * WIDTH + x - 3) * 4] > 127
+          && pixels[((y - 2) * WIDTH + x + 3) * 4] > 127
+          && pixels[((y + 2) * WIDTH + x - 3) * 4] > 127
+          && pixels[((y + 2) * WIDTH + x + 3) * 4] > 127 ? 1 : 0;
+      }
+    }
+    // Only connected, foot-sized ground is valid for movement or save restoration.
+    // Both hand-built bridges join the same road network; water never becomes a shortcut.
     this._walkable = new Uint8Array(WIDTH * HEIGHT);
-    for (let i = 0; i < this._walkable.length; i += 1) this._walkable[i] = pixels[i * 4] > 127 ? 1 : 0;
-    // Keep only the compact collision bitmap, not a second full-resolution mask canvas.
+    const queue = new Int32Array(WIDTH * HEIGHT);
+    const start = 216 * WIDTH + 62;
+    let first = 0;
+    let last = 1;
+    queue[0] = start;
+    this._walkable[start] = 1;
+    const neighbors = [-1, 1, -WIDTH, WIDTH];
+    while (first < last) {
+      const index = queue[first++];
+      for (const offset of neighbors) {
+        const next = index + offset;
+        if (clear[next] && !this._walkable[next]) {
+          this._walkable[next] = 1;
+          queue[last++] = next;
+        }
+      }
+    }
   }
 
   _makeProgress() {
@@ -813,10 +894,277 @@ export class IslandWorld {
     }
   }
 
-  _render() {
+  /** Advance gameplay in seconds; omitting this call pauses every actor and cooldown. */
+  update(dt, input = {}) {
+    if (this._destroyed || this._activeEncounter || !Number.isFinite(dt) || dt <= 0) return;
+    const elapsed = Math.min(dt, 0.05);
+    this._reducedMotion = this._media.matches;
+    this._contactCooldown = Math.max(0, this._contactCooldown - elapsed);
+    this._interactionCooldown = Math.max(0, this._interactionCooldown - elapsed);
+    let dx = Number.isFinite(input.x) ? Math.max(-1, Math.min(1, input.x)) : 0;
+    let dy = Number.isFinite(input.y) ? Math.max(-1, Math.min(1, input.y)) : 0;
+    const magnitude = Math.hypot(dx, dy);
+    if (magnitude > 1) {
+      dx /= magnitude;
+      dy /= magnitude;
+    }
+    if (dx || dy) {
+      this._facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'west' : 'east') : (dy < 0 ? 'north' : 'south');
+    }
+    const speed = input.dash ? DASH_SPEED : WALK_SPEED;
+    const distance = this._moveActor(this._position, dx * speed * elapsed, dy * speed * elapsed, true);
+    this._walkDistance += distance;
+    const step = Math.floor(this._walkDistance / 4) % 2;
+    if (this._facing === 'west') this._playerPose = distance ? 8 + step : 6;
+    else if (this._facing === 'east') this._playerPose = distance ? 10 + step : 7;
+    else if (this._facing === 'north') this._playerPose = distance ? 4 + step : 3;
+    else this._playerPose = distance ? 1 + step : 0;
+    this._updateCompanion();
+    this._updateZone();
+    this._updateCamera(elapsed);
+    if (distance) this.onMove(this.getPosition());
+    this._updateEnemies(elapsed);
+  }
+
+  _canStand(x, y) {
+    const px = Math.round(x);
+    const py = Math.round(y);
+    return px >= 4 && px < WIDTH - 4 && py >= 3 && py < HEIGHT - 3
+      && this._walkable[py * WIDTH + px] === 1;
+  }
+
+  _moveActor(actor, dx, dy, recordTrail = false) {
+    const steps = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)));
+    if (!steps) return 0;
+    const startX = actor.x;
+    const startY = actor.y;
+    const stepX = dx / steps;
+    const stepY = dy / steps;
+    // Subpixel axis steps prevent tunneling and let a traveler slide along a wall.
+    for (let step = 0; step < steps; step += 1) {
+      if (stepX && this._canStand(actor.x + stepX, actor.y)) {
+        actor.x += stepX;
+        if (recordTrail) this._recordTrail();
+      }
+      if (stepY && this._canStand(actor.x, actor.y + stepY)) {
+        actor.y += stepY;
+        if (recordTrail) this._recordTrail();
+      }
+    }
+    actor.depth = actor.y;
+    return Math.hypot(actor.x - startX, actor.y - startY);
+  }
+
+  _resetTrail() {
+    this._trailHead = 0;
+    this._trailCount = 1;
+    this._trailX[0] = this._position.x;
+    this._trailY[0] = this._position.y;
+    this._companion.x = this._position.x;
+    this._companion.y = this._position.y;
+    this._companion.depth = this._position.y;
+  }
+
+  _recordTrail() {
+    const { x, y } = this._position;
+    if (Math.hypot(x - this._trailX[this._trailHead], y - this._trailY[this._trailHead]) < 0.5) return;
+    this._trailHead = (this._trailHead + 1) % this._trailX.length;
+    this._trailX[this._trailHead] = x;
+    this._trailY[this._trailHead] = y;
+    this._trailCount = Math.min(this._trailCount + 1, this._trailX.length);
+  }
+
+  _updateCompanion() {
+    if (this._companion.id === -1) return;
+    let x = this._position.x;
+    let y = this._position.y;
+    let remaining = 14;
+    // Follow the actual foot trail, including bridge turns, rather than cutting across water.
+    for (let offset = 0; offset < this._trailCount; offset += 1) {
+      const index = (this._trailHead - offset + this._trailX.length) % this._trailX.length;
+      const previousX = this._trailX[index];
+      const previousY = this._trailY[index];
+      const segment = Math.hypot(previousX - x, previousY - y);
+      if (segment >= remaining) {
+        const ratio = remaining / segment;
+        const nextX = x + (previousX - x) * ratio;
+        const nextY = y + (previousY - y) * ratio;
+        if (this._canStand(nextX, nextY)) {
+          x = nextX;
+          y = nextY;
+        } else {
+          x = previousX;
+          y = previousY;
+        }
+        break;
+      }
+      remaining -= segment;
+      x = previousX;
+      y = previousY;
+    }
+    this._companion.x = x;
+    this._companion.y = y;
+    this._companion.depth = y;
+  }
+
+  _isProtected(x, y) {
+    for (const camp of CAMPS) {
+      if ((x - camp.x) ** 2 + (y - camp.y) ** 2 < 20 ** 2) return true;
+    }
+    for (const location of LOCATIONS) {
+      if ((x - location.x) ** 2 + (y - location.y) ** 2 < 16 ** 2) return true;
+    }
+    return false;
+  }
+
+  _choosePatrol(enemy) {
+    enemy.targetX = enemy.homeX;
+    enemy.targetY = enemy.homeY;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const angle = this._random() * Math.PI * 2;
+      const radius = enemy.roam * (0.4 + this._random() * 0.6);
+      const x = enemy.homeX + Math.cos(angle) * radius;
+      const y = enemy.homeY + Math.sin(angle) * radius;
+      if (this._canStand(x, y) && !this._isProtected(x, y)) {
+        enemy.targetX = x;
+        enemy.targetY = y;
+        break;
+      }
+    }
+    enemy.turnTimer = 1.5 + this._random() * 2.5;
+  }
+
+  _updateEnemies(dt) {
+    const player = this._position;
+    const protectedPlayer = this._isProtected(player.x, player.y);
+    for (const enemy of this._enemies) {
+      if (enemy.defeated) continue;
+      const distance = Math.hypot(player.x - enemy.x, player.y - enemy.y);
+      enemy.chasing = !protectedPlayer && this._contactCooldown === 0 && distance < 29
+        && Math.hypot(player.x - enemy.homeX, player.y - enemy.homeY) < 45;
+      enemy.turnTimer -= dt;
+      if (!enemy.chasing && (enemy.turnTimer <= 0
+          || Math.hypot(enemy.targetX - enemy.x, enemy.targetY - enemy.y) < 1)) this._choosePatrol(enemy);
+      const targetX = enemy.chasing ? player.x : enemy.targetX;
+      const targetY = enemy.chasing ? player.y : enemy.targetY;
+      const dx = targetX - enemy.x;
+      const dy = targetY - enemy.y;
+      const length = Math.hypot(dx, dy);
+      if (length > 0.01) {
+        // Even a walking hero outruns noise; sprinting is for choosing one's battles.
+        const travel = Math.min(length, (enemy.chasing ? 23 : 11) * dt);
+        const moved = this._moveActor(enemy, dx / length * travel, dy / length * travel);
+        if (moved < travel * 0.25) enemy.turnTimer = 0;
+      }
+      if (!protectedPlayer && this._contactCooldown === 0
+          && Math.hypot(player.x - enemy.x, player.y - enemy.y) < 8) {
+        this._activeEncounter = enemy.uid;
+        this.onEncounter({ id: enemy.id, boss: false, uid: enemy.uid });
+        return;
+      }
+    }
+  }
+
+  _updateCamera(dt, snap = false) {
+    const targetX = Math.max(0, Math.min(WIDTH - VIEW_WIDTH, this._position.x - VIEW_WIDTH / 2));
+    const targetY = Math.max(0, Math.min(HEIGHT - VIEW_HEIGHT, this._position.y - VIEW_HEIGHT / 2));
+    const blend = snap || this._reducedMotion ? 1 : 1 - Math.exp(-12 * dt);
+    this._camera.x += (targetX - this._camera.x) * blend;
+    this._camera.y += (targetY - this._camera.y) * blend;
+  }
+
+  _updateZone() {
+    let distance = Infinity;
+    for (const location of LOCATIONS) {
+      const squared = (location.x - this._position.x) ** 2 + (location.y - this._position.y) ** 2;
+      if (squared < distance) {
+        distance = squared;
+        this._zone = location.id;
+      }
+    }
+  }
+
+  _findInteraction() {
+    let nearest = null;
+    let distance = Infinity;
+    for (const target of this._interactables) {
+      if (target.kind === 'pickup' && this._collected.has(target.id)) continue;
+      const squared = (target.x - this._position.x) ** 2 + (target.y - this._position.y) ** 2;
+      if (squared <= target.radius ** 2 && squared < distance) {
+        nearest = target;
+        distance = squared;
+      }
+    }
+    return nearest;
+  }
+
+  /** Call on the host's E/Enter/Space press, not while the key is held. */
+  interact() {
+    if (this._destroyed || this._activeEncounter || this._interactionCooldown > 0) return false;
+    const target = this._findInteraction();
+    if (!target) return false;
+    this._interactionCooldown = 0.25;
+    if (target.kind === 'guardian') {
+      if (this._completed.has(target.id)) {
+        this.onInteract({ kind: 'dialogue', id: target.id, text: `${GUARDIANS[target.id]}: ${GREETINGS[target.id]}` });
+      } else if (target.id !== this._frontier) {
+        this.onInteract({
+          kind: 'dialogue', id: target.id,
+          text: `${GUARDIANS[target.id]}: Find ${GUARDIANS[this._frontier]} first. Follow the gold lantern.`,
+        });
+      } else {
+        const uid = `guardian-${target.id}`;
+        this._activeEncounter = uid;
+        this.onEncounter({ id: target.id, boss: true, uid });
+      }
+    } else if (target.kind === 'camp') {
+      this._contactCooldown = 3;
+      this.onInteract({ kind: 'camp', id: target.id, text: `${target.name}: a warm fire and a moment to breathe.` });
+    } else if (target.kind === 'pickup') {
+      this._collected.add(target.id);
+      this.onInteract({ kind: 'pickup', id: target.id, text: 'A snack tucked inside a leaf-wrapped trail cache.' });
+    } else {
+      this.onInteract({ kind: 'dialogue', id: target.id, text: target.text });
+    }
+    return true;
+  }
+
+  /** Battle settlement: progress/rewards remain host-owned; contact gets a grace period. */
+  finishEncounter(uid, won) {
     if (this._destroyed) return;
+    const enemy = this._enemies.find((creature) => creature.uid === uid);
+    if (enemy) {
+      enemy.chasing = false;
+      if (won) enemy.defeated = true;
+      else {
+        enemy.x = enemy.homeX;
+        enemy.y = enemy.homeY;
+        enemy.depth = enemy.y;
+        enemy.targetX = enemy.homeX;
+        enemy.targetY = enemy.homeY;
+        enemy.turnTimer = 1;
+      }
+    }
+    if (this._activeEncounter === uid) this._activeEncounter = null;
+    this._contactCooldown = 3;
+    this._interactionCooldown = 0.25;
+  }
+
+  /** Draw only; actor movement never depends on rendering or motion preferences. */
+  render(time = 0) {
+    if (this._destroyed) return;
+    this._reducedMotion = this._media.matches;
+    this._phase = this._reducedMotion ? 0 : Math.floor(time / 180) % 8;
     const ctx = this.ctx;
+    const cameraX = Math.round(this._camera.x * ZOOM) / ZOOM;
+    const cameraY = Math.round(this._camera.y * ZOOM) / ZOOM;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, WIDTH, HEIGHT);
+    ctx.save();
+    ctx.scale(ZOOM, ZOOM);
+    ctx.translate(-cameraX, -cameraY);
     ctx.drawImage(this._terrain, 0, 0);
     ctx.drawImage(this._progress, 0, 0);
     const shift = this._reducedMotion ? 0 : this._phase % 3;
@@ -825,146 +1173,178 @@ export class IslandWorld {
       rect(ctx, x + (i % 2 === 0 ? shift : -shift), y, 5, 1, '#b0cbc0');
       rect(ctx, x + 2 + (i % 2 === 0 ? shift : -shift), y + 1, 6, 1, '#8db5aa');
     }
-    let playerDrawn = false;
+    this._entities.sort((a, b) => a.depth - b.depth);
     for (const entity of this._entities) {
-      if (!playerDrawn && this._position.y < entity.depth) {
-        this._drawPlayer();
-        playerDrawn = true;
-      }
-      if (entity.guardian === undefined) {
-        ctx.drawImage(this._completed.has(entity.restoreId) ? entity.restored : entity.normal, entity.x, entity.y);
-      } else {
-        const unlocked = entity.guardian <= this._frontier;
-        const bob = !this._reducedMotion && unlocked && (this._phase + entity.guardian * 2) % 8 < 3 ? -1 : 0;
-        ctx.globalAlpha = unlocked ? 1 : 0.53;
-        ctx.drawImage(this._atlas, entity.guardian * 24, 0, 24, 24, entity.x - 12, entity.y - 24 + bob, 24, 24);
-        ctx.globalAlpha = 1;
-      }
+      if (entity.kind === 'player') this._drawPlayer();
+      else if (entity.kind === 'guardian') this._drawGuardian(entity);
+      else if (entity.kind === 'companion') this._drawCompanion();
+      else if (entity.kind === 'noise') this._drawNoise(entity);
+      else if (entity.kind === 'camp') this._drawCamp(entity);
+      else if (entity.kind === 'pickup') this._drawPickup(entity);
+      else ctx.drawImage(this._completed.has(entity.restoreId) ? entity.restored : entity.normal, entity.x, entity.y);
     }
-    if (!playerDrawn) this._drawPlayer();
     ctx.drawImage(this._markers, 0, 0);
+    ctx.restore();
   }
 
   _drawPlayer() {
-    const { x, y } = this._position;
+    const x = Math.round(this._position.x);
+    const y = Math.round(this._position.y);
     rect(this.ctx, x - 5, y - 2, 11, 3, '#678365');
     rect(this.ctx, x - 7, y - 1, 15, 1, '#78936c');
     this.ctx.drawImage(this._atlas, 168, this._playerPose * 24, 24, 24, x - 12, y - 24, 24, 24);
+    if (this._contactCooldown > 0) {
+      // A steady shield, not a flashing invulnerability effect.
+      shape(this.ctx, [[x + 9, y - 21], [x + 15, y - 21], [x + 15, y - 16], [x + 12, y - 13], [x + 9, y - 16]], '#e4edc6');
+      rect(this.ctx, x + 11, y - 19, 2, 4, '#79a39b');
+    }
   }
 
-  _syncAnimation() {
-    if (this._raf) window.cancelAnimationFrame(this._raf);
-    this._raf = 0;
-    this._phase = 0;
-    this._render();
-    if (!this._destroyed && !this._reducedMotion && !document.hidden) this._raf = window.requestAnimationFrame(this._tick);
+  _drawGuardian(guardian) {
+    const { id, x, y } = guardian;
+    const awake = id <= this._frontier || this._completed.has(id);
+    const bob = !this._reducedMotion && awake && (this._phase + id) % 8 < 3 ? -1 : 0;
+    rect(this.ctx, x - 7, y - 2, 14, 3, '#708a70');
+    this.ctx.globalAlpha = awake ? 1 : 0.78;
+    this.ctx.drawImage(this._atlas, id * 24, 0, 24, 24, x - 12, y - 24 + bob, 24, 24);
+    this.ctx.globalAlpha = 1;
   }
 
-  _canStand(x, y) {
-    const px = Math.round(x);
-    const py = Math.round(y);
-    if (px < 4 || px >= WIDTH - 4 || py < 3 || py >= HEIGHT - 3) return false;
-    // Collision uses feet, not the hat; scenery is depth-sorted above a traveler walking behind it.
-    return this._walkable[py * WIDTH + px] === 1
-      && this._walkable[(py - 2) * WIDTH + px - 3] === 1
-      && this._walkable[(py - 2) * WIDTH + px + 3] === 1
-      && this._walkable[(py + 2) * WIDTH + px - 3] === 1
-      && this._walkable[(py + 2) * WIDTH + px + 3] === 1;
+  _drawCompanion() {
+    if (this._companion.id === -1) return;
+    const x = Math.round(this._companion.x);
+    const y = Math.round(this._companion.y);
+    const bob = !this._reducedMotion && this._phase % 4 < 2 ? -1 : 0;
+    rect(this.ctx, x - 4, y - 1, 9, 2, '#7b956f');
+    this.ctx.drawImage(this._atlas, this._companion.id * 24, 0, 24, 24, x - 8, y - 16 + bob, 16, 16);
   }
 
-  _nearest(x, y, radius) {
-    let closest = -1;
-    let distance = radius * radius;
-    for (const location of LOCATIONS) {
-      const dx = location.x - x;
-      const dy = location.y - y;
-      const squared = dx * dx + dy * dy;
-      if (squared <= distance) {
-        closest = location.id;
-        distance = squared;
+  _drawNoise(enemy) {
+    if (enemy.defeated) return;
+    const x = Math.round(enemy.x);
+    const y = Math.round(enemy.y);
+    const frame = this._reducedMotion ? 0 : this._phase % 2;
+    rect(this.ctx, x - 6, y - 1, 13, 2, '#777b7f');
+    this.ctx.drawImage(this._noiseAtlas, enemy.id * 18, frame * 18, 18, 18, x - 9, y - 18, 18, 18);
+    if (enemy.chasing) {
+      rect(this.ctx, x - 1, y - 25, 3, 5, '#f5d1a1');
+      rect(this.ctx, x, y - 24, 1, 3, '#9c524d');
+      rect(this.ctx, x, y - 19, 1, 1, '#9c524d');
+    }
+  }
+
+  _drawCamp(camp) {
+    const { x, y } = camp;
+    const flame = this._reducedMotion ? 0 : this._phase % 2;
+    rect(this.ctx, x - 8, y - 1, 16, 3, '#7f8767');
+    rect(this.ctx, x - 6, y - 2, 12, 3, '#61766c');
+    rect(this.ctx, x - 5, y - 1, 10, 2, '#bcad87');
+    rect(this.ctx, x - 5, y - 3, 11, 2, '#7f644d');
+    rect(this.ctx, x - 3, y - 6, 7, 4, '#c57d4e');
+    rect(this.ctx, x - 2, y - 10 - flame, 4, 8 + flame, '#edb76c');
+    rect(this.ctx, x, y - 8, 3, 6, '#f5dba0');
+    rect(this.ctx, x - 1, y - 5, 2, 3, '#fff0c2');
+    rect(this.ctx, x + 10, y - 16, 1, 17, '#846d50');
+    rect(this.ctx, x + 11, y - 16, 9, 8, '#688f85');
+    rect(this.ctx, x + 14, y - 15, 2, 6, '#e8dec1');
+    rect(this.ctx, x + 12, y - 13, 6, 2, '#e8dec1');
+  }
+
+  _drawPickup(pickup) {
+    if (this._collected.has(pickup.id)) return;
+    const { x, y } = pickup;
+    rect(this.ctx, x - 6, y - 1, 13, 2, '#7d8a68');
+    rect(this.ctx, x - 5, y - 7, 11, 7, '#576d50');
+    rect(this.ctx, x - 4, y - 6, 9, 5, '#acaa73');
+    rect(this.ctx, x - 5, y - 8, 11, 3, '#7a9e65');
+    rect(this.ctx, x - 3, y - 9, 7, 2, '#b1cb8d');
+    rect(this.ctx, x - 1, y - 8, 3, 7, '#e4cb8f');
+    rect(this.ctx, x, y - 4, 1, 2, '#8a7950');
+    if (this._reducedMotion || this._phase % 4 < 2) sparkle(this.ctx, x + 6, y - 12, '#f7e4ab');
+  }
+
+  getPrompt() {
+    const target = this._findInteraction();
+    if (target?.kind === 'guardian') {
+      return this._completed.has(target.id) || target.id !== this._frontier
+        ? `E: Talk to ${GUARDIANS[target.id]}`
+        : `E: Challenge ${GUARDIANS[target.id]}`;
+    }
+    if (target?.kind === 'camp') return 'E: Rest at camp';
+    if (target?.kind === 'pickup') return 'E: Open snack cache';
+    if (target) return 'E: Trail sign';
+    return '';
+  }
+
+  setProgress(completedIds = []) {
+    if (this._destroyed) return;
+    this._completed = new Set();
+    let companion = -1;
+    for (const id of completedIds) {
+      if (Number.isInteger(id) && id >= 0 && id < LOCATIONS.length) {
+        this._completed.add(id);
+        companion = Math.max(companion, id);
       }
     }
-    return closest;
-  }
-
-  move(dx, dy) {
-    if (this._destroyed || !Number.isInteger(dx) || !Number.isInteger(dy) || Math.abs(dx) + Math.abs(dy) !== 1) return false;
-    for (let offset = 1; offset <= STEP; offset += 1) {
-      if (!this._canStand(this._position.x + dx * offset, this._position.y + dy * offset)) return false;
-    }
-    this._position.x += dx * STEP;
-    this._position.y += dy * STEP;
-    this._stepPose = this._stepPose === 1 ? 2 : 1;
-    this._playerPose = dx < 0 ? 6 : dx > 0 ? 7 : dy < 0 ? 3 + (this._reducedMotion ? 0 : this._stepPose) : this._reducedMotion ? 0 : this._stepPose;
-    this._render();
-    this.onMove(this.getPosition());
-    return true;
-  }
-
-  interact() {
-    if (this._destroyed) return false;
-    const id = this._nearest(this._position.x, this._position.y, 30);
-    if (id === -1) return false;
-    if (id > this._frontier) {
-      this.onLocked(id);
-      return false;
-    }
-    this.onEncounter(id);
-    return true;
-  }
-
-  travel(id) {
-    if (this._destroyed || !Number.isInteger(id) || id < 0 || id >= LOCATIONS.length) return false;
-    if (id > this._frontier) {
-      this.onLocked(id);
-      return false;
-    }
-    const arrival = ARRIVALS[id];
-    this._position.x = arrival.x;
-    this._position.y = arrival.y;
-    this._playerPose = 3;
-    this._render();
-    this.onMove(this.getPosition());
-    this.onEncounter(id);
-    return true;
-  }
-
-  setProgress(completedIds) {
-    if (this._destroyed) return;
-    this._completed = new Set(completedIds);
-    this._frontier = Math.min(LOCATIONS.length, completedIds.length);
+    this._frontier = 0;
+    while (this._completed.has(this._frontier)) this._frontier += 1;
+    this._companion.id = companion;
+    this._updateCompanion();
     const destination = this._frontier < LOCATIONS.length
-      ? `The gold beacon marks your next guardian in ${BIOMES[this._frontier]}.`
-      : 'All seven guardians are befriended, and their island landmarks are restored.';
-    this.canvas.setAttribute('aria-label', `Pixel-art Bitbound island: meadow, crystal grove, tide pool, lunar heights, forge, library ruins, and jade tower. ${completedIds.length} of 7 guardians befriended. ${destination} Use the movement controls to explore, interact near a guardian, or select an unlocked guardian with the travel buttons. Clicking a guardian also travels there. Padlocks mark guardians not yet unlocked; checkmarks mark friendships.`);
+      ? `Follow the gold lantern to ${GUARDIANS[this._frontier]} in ${ZONES[this._frontier]}.`
+      : 'All seven guardians are friends and their island landmarks are restored.';
+    this.canvas.setAttribute('aria-label', `Scrolling pixel-art Bitbound island. ${this._completed.size} of 7 guardians befriended. ${destination} Hold WASD or arrow keys to walk, Shift to dash, and E, Enter or Space to interact nearby. Avoid roaming purple noise creatures or touch them to battle. Campfires heal; leaf caches hold snacks.`);
     this._makeProgress();
-    this._render();
+  }
+
+  setCollected(ids = []) {
+    if (!this._destroyed) this._collected = new Set(ids);
+  }
+
+  getZone() {
+    return { id: this._zone, name: ZONES[this._zone] };
   }
 
   getPosition() {
     return { x: this._position.x, y: this._position.y };
   }
 
+  /** Restore continuous coordinates only on connected ground, never onto water or a prop. */
   setPosition(position) {
     if (this._destroyed || !position || !Number.isFinite(position.x) || !Number.isFinite(position.y)
         || !this._canStand(position.x, position.y)) return false;
-    const x = 6 + Math.round((position.x - 6) / STEP) * STEP;
-    const y = Math.round(position.y / STEP) * STEP;
-    if (!this._canStand(x, y)) return false;
-    this._position.x = x;
-    this._position.y = y;
+    this._position.x = position.x;
+    this._position.y = position.y;
+    this._position.depth = position.y;
     this._playerPose = 0;
-    this._render();
+    this._facing = 'south';
+    this._walkDistance = 0;
+    this._contactCooldown = 3;
+    this._resetTrail();
+    this._updateZone();
+    this._updateCamera(0, true);
     return true;
   }
 
   destroy() {
     if (this._destroyed) return;
     this._destroyed = true;
-    if (this._raf) window.cancelAnimationFrame(this._raf);
-    this._raf = 0;
-    this.canvas.removeEventListener('click', this._onClick);
-    document.removeEventListener('visibilitychange', this._onVisibility);
-    this._media.removeEventListener('change', this._onMotion);
+    const layers = new Set([this._terrain, this._progress, this._markers, this._atlas, this._noiseAtlas]);
+    for (const prop of this._props) {
+      layers.add(prop.normal);
+      layers.add(prop.restored);
+    }
+    for (const layer of layers) {
+      layer.width = 0;
+      layer.height = 0;
+    }
+    this._props.length = 0;
+    this._entities.length = 0;
+    this._enemies.length = 0;
+    this._interactables.length = 0;
+    this._walkable = null;
+    this.onEncounter = () => {};
+    this.onInteract = () => {};
+    this.onMove = () => {};
   }
 }

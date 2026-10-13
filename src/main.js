@@ -1,511 +1,789 @@
-import './styles.css';
-import { LESSONS, evaluateEncounter } from './campaign.js';
-import { GUIDE } from './field-guide.js';
-import { IslandWorld, LOCATIONS } from './world.js';
-import { drawSprite, spriteDataUrl } from './art.js';
-import { loadAdventure, saveAdventure, newAdventure } from './save.js';
-import { GameAudio } from './audio.js';
-import { drawEncounterScene, SCENE_CAPTIONS } from './scenes.js';
+import "./styles.css";
+import { IslandWorld } from "./world.js";
+import { GameAudio } from "./audio.js";
+import { Battle, COMMANDS, FOES, RULER_NAMES } from "./battle.js";
+import {
+  drawBattle,
+  drawDialogue,
+  drawEnding,
+  drawPause,
+  drawTitle,
+  drawWorldHud,
+  nextObjective,
+} from "./battle-view.js";
+import { loadAdventure, newAdventure, saveAdventure } from "./save.js";
+import { feedbackSummary, feedbackCaption } from "./cast-feedback.js";
 
-const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
-const fmt = value => Number.isFinite(value) ? (Math.abs(value) < 0.001 && value !== 0 ? value.toExponential(2) : Number(value.toFixed(4)).toString()) : '—';
-const colors = ['#b6db8c', '#e6bc6a', '#88c6c3', '#b0a7d6', '#e5a070', '#c3a1d3', '#e6bc6a'];
-const chapterLabels = ['Bit depth', 'Zero point', 'Calibration', 'Channels', 'Inference', 'Outliers', 'Deployment'];
-const chapterOutcomes = ['The stepping stones align!', 'The zero bell rings!', 'The weather route clears!', 'Every thread finds its ruler!', 'The forge relays agree!', 'The outlier pulley balances!', 'The precision beacon wakes!'];
-const images = new Map();
-function sprite(kind) {
-  if (!images.has(kind)) images.set(kind, spriteDataUrl(kind, 5));
-  return images.get(kind);
-}
 let state = loadAdventure();
-const audio = new GameAudio(state.sound);
-let world;
-let dialog;
-let dialogKind = '';
-let encounter = null;
-let returnFocus = null;
-let guideReturn = null;
-let toastTimer;
+let mode = "title";
+let returnMode = "world";
+let battle = null;
+let dialogue = "";
+let notice = "";
+let noticeUntil = 0;
+let pauseChoice = 0;
+let resetQuestion = false;
 let saveTimer;
-let lastNearby = -1;
-let storageAvailable = true;
+let lastFrame = 0;
+let lastReadout = "";
+let statusClock = 0;
+let musicClock = 0;
+let desktopLayout = "";
+const held = new Set();
+const audio = new GameAudio(false);
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+const phoneMedia = matchMedia("(max-width:700px)");
+let phoneLayout = "";
+const directions = {
+  w: [0, -1],
+  arrowup: [0, -1],
+  a: [-1, 0],
+  arrowleft: [-1, 0],
+  s: [0, 1],
+  arrowdown: [0, 1],
+  d: [1, 0],
+  arrowright: [1, 0],
+};
+
+document.querySelector("#app").innerHTML = `
+  <main class="rpg-shell">
+    <header class="rpg-header"><a class="brand" href="./"><img src="./favicon.svg" alt=""/><span>BITBOUND<small>THE STATIC ISLE</small></span></a><div class="header-actions"><button id="music" aria-pressed="${state.music}"><span class="music-led" aria-hidden="true"></span><span id="music-label">Music ${state.music ? "on" : "off"}</span><kbd>M</kbd></button><button id="fullscreen" aria-label="Toggle full screen">Full screen <kbd>F</kbd></button></div></header>
+    <section class="handheld" aria-label="Bitbound role-playing game"><div class="console-label"><span>PRECISION POCKET</span><span class="power-label"><i></i> POWER</span></div>
+      <div id="phone-hud" class="phone-hud" hidden><span id="phone-location"></span><span id="phone-health"></span><span id="phone-objective"></span><span id="phone-charge"></span></div>
+      <div class="game-screen" id="screen"><canvas id="game" width="480" height="288" tabindex="0" role="application" aria-label="Bitbound. Press Enter to start with music. WASD moves; Shift runs; E interacts; M mutes."></canvas><button id="start" class="title-hitbox" aria-label="Begin adventure with music"><span class="sr-only">Begin adventure</span></button><div id="command-buttons" class="command-overlay" hidden></div></div>
+      <div id="phone-panel" class="phone-panel" hidden><p id="phone-loadout" hidden></p><p id="phone-message"></p><p id="phone-cast" hidden></p><div id="phone-options" class="phone-options"></div></div>
+      <div class="console-footer"><span class="control-legend"><kbd>WASD</kbd> move <kbd>SHIFT</kbd> run <kbd>E</kbd> interact <kbd>ESC</kbd> pause</span><span id="save-light">LOCAL SAVE</span></div>
+    </section>
+    <div class="touch-controls" aria-label="Gamepad controls"><div class="dpad"><button data-dir="w" aria-label="Up">↑</button><button data-dir="a" aria-label="Left">←</button><span aria-hidden="true"></span><button data-dir="d" aria-label="Right">→</button><button data-dir="s" aria-label="Down">↓</button></div><div class="gamepad-actions"><button id="touch-b" aria-label="Back or pause">B</button><button id="touch-a" aria-label="Interact or confirm">A</button><button id="touch-q" aria-label="Cycle spell bits">BITS</button></div></div>
+    <p class="game-caption">Explore. Battle the static. Make seven very unusual friends.</p>
+    <footer class="rpg-footer"><span>Original art & music. Real toy quantization.</span><a href="https://github.com/mottopanikeiku/bitbound-quantization-quest/blob/main/RESEARCH.md" target="_blank" rel="noopener noreferrer">Research & source ↗</a></footer>
+    <p id="readout" class="sr-only" role="status" aria-live="polite"></p>
+  </main>`;
+const canvas = document.querySelector("#game");
+const ctx = canvas.getContext("2d");
+ctx.imageSmoothingEnabled = false;
+const startButton = document.querySelector("#start");
+const commands = document.querySelector("#command-buttons");
+const musicButton = document.querySelector("#music");
+const musicData = new Uint8Array(256);
 
 function persist() {
-  storageAvailable = saveAdventure(state);
-  const indicator = document.querySelector('.save-indicator');
-  if (indicator) indicator.textContent = storageAvailable ? 'SAVED ON THIS DEVICE' : 'SESSION ONLY · STORAGE UNAVAILABLE';
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  document.querySelector("#save-light").textContent = saveAdventure(state)
+    ? "LOCAL SAVE"
+    : "SESSION ONLY";
 }
-
-function toast(message) {
-  const element = document.querySelector('.toast');
-  element.textContent = message;
-  element.classList.add('visible');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => element.classList.remove('visible'), 4200);
+function announce(message, seconds = 4) {
+  notice = message;
+  noticeUntil = performance.now() + seconds * 1000;
 }
-
-function chapter() { return Math.min(state.completed.length, 6); }
-
-function renderShell() {
-  world?.destroy();
-  document.querySelector('#app').innerHTML = `
-    <div class="app-shell">
-      <header class="topbar">
-        <a class="brand" href="./" aria-label="Bitbound home"><img class="brand-mark" src="./favicon.svg" alt="" /><span><span class="brand-name">BITBOUND</span><span class="brand-subtitle">A QUANTIZATION ADVENTURE</span></span></a>
-        <div class="top-actions"><span class="save-indicator">SAVED ON THIS DEVICE</span><button class="icon-button" data-action="guide">Field guide</button><button class="icon-button" data-action="sound" aria-pressed="${state.sound}">${state.sound ? 'Sound on' : 'Sound off'}</button><button class="icon-button" data-action="settings" aria-label="Adventure settings">Settings</button></div>
-      </header>
-      <main>
-        <div class="game-layout">
-          <section class="world-panel" aria-labelledby="world-title">
-            <div class="panel-heading"><div><p class="eyebrow">EXPLORE · EXPERIMENT · BEFRIEND</p><h1 id="world-title">The Tensor Isles</h1></div><span class="status-pill">${state.completed.length === 7 ? 'ISLAND RESTORED' : 'ADVENTURE MODE'}</span></div>
-            <div class="world-stage"><canvas id="world" width="480" height="288" tabindex="0" aria-label="Explorable pixel-art island. Use arrow keys or W A S D to move, then E or Enter near a guardian. The location buttons below are an equal alternative."></canvas><div class="world-overlay"><span class="location-tag">BITLEAF MEADOW</span><span class="world-hint">${state.completed.length === 7 ? 'Every spirit has found a home.' : 'Follow the golden beacon.'}</span></div></div>
-            <div class="world-footer"><p class="control-hint"><kbd>W A S D</kbd> / <kbd>↑ ↓ ← →</kbd> move<br /><kbd>E</kbd> / <kbd>Enter</kbd> interact · tap a guardian to visit</p><div class="dpad" aria-label="Movement controls"><button data-dir="up" aria-label="Move up">↑</button><button data-dir="left" aria-label="Move left">←</button><button data-dir="down" aria-label="Move down">↓</button><button data-dir="right" aria-label="Move right">→</button></div><button class="interact-button" data-action="interact">Interact <span>E</span></button></div>
-            <nav class="journey-strip" aria-label="Visit island locations">${regionButtons()}</nav>
-          </section>
-          <aside class="sidebar" aria-label="Your adventure"><div id="quest-container">${questCard()}</div><section class="collection-card"><div class="panel-heading"><h2>Your companions</h2><span id="team-count">${state.completed.length}/7</span></div><div class="collection-grid">${teamSlots()}</div><button class="secondary-button" data-action="team">Open spirit journal →</button></section><section class="tip-card"><p class="eyebrow">A LITTLE FIELD NOTE</p><p>Fewer bits means a lighter pack.<br /><strong>Not automatically a faster model.</strong></p><button class="research-link" data-guide="deployment">Why the difference? ↗</button></section></aside>
-        </div>
-        <div class="bottom-bar"><span class="chapter-count">${state.completed.length} OF 7 SPIRITS BEFRIENDED</span><div class="progress-track" role="progressbar" aria-label="Adventure progress" aria-valuemin="0" aria-valuemax="7" aria-valuenow="${state.completed.length}"><div class="progress-fill" style="width:${state.completed.length / 7 * 100}%"></div></div><span>SMALL BITS. BIG ADVENTURE.</span></div>
-      </main>
-      <footer class="site-footer"><span>Original pixel art. Real numerical experiments. Zero prerequisites.</span><span><button class="research-link" data-action="guide">Research & sources</button> · <a href="https://github.com/mottopanikeiku/bitbound-quantization-quest" target="_blank" rel="noopener noreferrer">Source code ↗</a></span></footer>
-    </div>
-    <dialog id="overlay" class="game-dialog" aria-labelledby="dialog-title"></dialog><div class="toast" role="status" aria-live="polite"></div>`;
-  dialog = document.querySelector('#overlay');
-  dialog.addEventListener('cancel', event => { event.preventDefault(); closeDialog(); });
-  dialog.addEventListener('click', onDialogClick);
-  dialog.addEventListener('change', event => {
-    if (event.target.id === 'signal-choice' && encounter) {
-      encounter.signal = Number(event.target.value);
-      renderEncounter('#signal-choice', true);
-    }
-  });
-  world = new IslandWorld(document.querySelector('#world'), {
-    onEncounter: openEncounter,
-    onLocked: id => toast(`Befriend ${LESSONS[Math.max(0, id - 1)].name} to open the path to ${LESSONS[id].place}.`),
-    onMove: position => {
-      state.position = position;
-      clearTimeout(saveTimer);
-      saveTimer = setTimeout(persist, 250);
-      updateNearby(position);
-    },
-  });
-  world.setProgress(state.completed);
-  if (state.position) world.setPosition(state.position);
-  updateNearby(world.getPosition());
-  persist();
+function clearInput() {
+  held.clear();
+  document
+    .querySelectorAll("[data-dir]")
+    .forEach((button) => button.classList.remove("held"));
 }
-
-function regionButtons() {
-  return LESSONS.map(lesson => {
-    const complete = state.completed.includes(lesson.id);
-    const unlocked = lesson.id <= state.completed.length;
-    return `<button class="region-stop ${complete ? 'complete' : lesson.id === chapter() ? 'current' : 'locked'}" data-travel="${lesson.id}" aria-disabled="${!unlocked}" aria-label="${complete ? 'Replay' : unlocked ? 'Visit' : 'Locked:'} ${esc(lesson.place)}${complete ? ', befriended' : ''}"><span class="region-number">${complete ? '✓' : String(lesson.id + 1).padStart(2, '0')}</span><span class="region-name">${esc(chapterLabels[lesson.id])}</span></button>`;
-  }).join('');
+function focusGame() {
+  canvas.focus({ preventScroll: true });
 }
-
-function questCard() {
-  if (state.completed.length === 7) return `<section class="quest-card"><p class="quest-label">ADVENTURE COMPLETE</p><img class="quest-sprite" src="${sprite('dragon')}" alt="Your dragon companion" /><h2>The island is alive again.</h2><p>Seven spirits. Seven ideas. One precision ranger.</p><button class="primary-button" data-action="ending">See your ending →</button><button class="secondary-button" data-action="team">Revisit your companions</button></section>`;
-  const lesson = LESSONS[chapter()];
-  return `<section class="quest-card" style="--biome:${colors[lesson.id]}"><div class="quest-number">CHAPTER ${String(lesson.id + 1).padStart(2, '0')} / 07</div><img class="quest-sprite" src="${sprite(lesson.sprite)}" alt="${esc(lesson.name)}, the ${esc(lesson.concept)} guardian" /><p class="quest-label">${esc(lesson.place)}</p><h2>${esc(lesson.title)}</h2><p>${esc(lesson.description)}</p><div class="quest-goal"><span>YOUR MISSION</span><p>${esc(lesson.goal)}</p></div><button class="primary-button" data-travel="${lesson.id}">Meet ${esc(lesson.name)} →</button><p class="quest-footnote">No timer. No wrong turns. Experiment freely.</p></section>`;
-}
-
-function teamSlots() {
-  return LESSONS.map(lesson => {
-    const caught = state.completed.includes(lesson.id);
-    return `<button class="creature-slot ${caught ? 'caught' : ''}" data-creature="${lesson.id}" aria-label="${caught ? `Read about ${esc(lesson.name)}` : `Spirit ${lesson.id + 1}, not yet befriended`}"><img src="${sprite(lesson.sprite)}" alt="" /><span class="creature-name">${caught ? esc(lesson.name) : '???'}</span></button>`;
-  }).join('');
-}
-
-function refreshProgress() {
-  world.setProgress(state.completed);
-  document.querySelector('#quest-container').innerHTML = questCard();
-  document.querySelector('.collection-grid').innerHTML = teamSlots();
-  document.querySelector('#team-count').textContent = `${state.completed.length}/7`;
-  document.querySelector('.journey-strip').innerHTML = regionButtons();
-  document.querySelector('.chapter-count').textContent = `${state.completed.length} OF 7 SPIRITS BEFRIENDED`;
-  document.querySelector('.progress-fill').style.width = `${state.completed.length / 7 * 100}%`;
-  document.querySelector('[role="progressbar"]').setAttribute('aria-valuenow', state.completed.length);
-  document.querySelector('.status-pill').textContent = state.completed.length === 7 ? 'ISLAND RESTORED' : 'ADVENTURE MODE';
-  document.querySelector('.world-hint').textContent = state.completed.length === 7 ? 'Every spirit has found a home.' : 'Follow the golden beacon.';
-}
-
-function updateNearby(position) {
-  let nearest = 0;
-  let distance = Infinity;
-  for (const node of LOCATIONS) {
-    const d = Math.hypot(position.x - node.x, position.y - node.y);
-    if (d < distance) { distance = d; nearest = node.id; }
+function syncControls() {
+  startButton.hidden = mode !== "title";
+  startButton.setAttribute(
+    "aria-label",
+    `${state.started ? "Continue" : "Begin"} adventure ${state.music ? "with music" : "with music muted"}`,
+  );
+  const layout =
+    mode === "battle" &&
+    !phoneMedia.matches &&
+    ["menu", "tune"].includes(battle.phase)
+      ? battle.phase
+      : "";
+  commands.hidden = !layout;
+  if (desktopLayout !== layout) {
+    commands.innerHTML =
+      layout === "menu"
+        ? COMMANDS.map(
+            (name, index) =>
+              `<button data-command="${index}" style="left:${((19 + (index % 2) * 155) / 480) * 100}%;top:${((202 + Math.floor(index / 2) * 25) / 288) * 100}%;" aria-label="${name}"><span class="sr-only">${name}</span></button>`,
+          ).join("")
+        : layout === "tune"
+          ? tuneLabels()
+              .map(
+                (label, index) =>
+                  `<button data-tune-row="${index}" style="left:3.96%;top:${((194 + index * 20) / 288) * 100}%;width:91.67%;height:6.25%;" aria-label="${label}. Activate to cycle."><span class="sr-only">${label}</span></button>`,
+              )
+              .join("")
+          : "";
+    desktopLayout = layout;
   }
-  document.querySelector('.location-tag').textContent = LESSONS[nearest].place.toUpperCase();
-  const close = distance <= 36 ? nearest : -1;
-  if (close !== lastNearby) {
-    lastNearby = close;
-    const hint = document.querySelector('.world-hint');
-    hint.textContent = close >= 0 && close <= state.completed.length ? `Press E to meet ${LESSONS[close].name}` : state.completed.length === 7 ? 'Every spirit has found a home.' : 'Follow the golden beacon.';
+  updateDesktopTuneLabels();
+  updatePhoneUi();
+}
+
+function tuneLabels() {
+  const range = { native: "Standard", full: "Scanned", trim: "Trimmed" }[
+    battle.gear.range
+  ];
+  return [
+    `Weights: ${battle.gear.weightBits} bit`,
+    `Samples: ${battle.gear.activationBits} bit`,
+    `Ruler: ${RULER_NAMES[battle.gear.ruler]}`,
+    `Range: ${range}`,
+  ];
+}
+function updateDesktopTuneLabels() {
+  if (desktopLayout !== "tune") return;
+  const labels = tuneLabels();
+  for (const button of commands.querySelectorAll("[data-tune-row]")) {
+    button.setAttribute(
+      "aria-label",
+      `${labels[Number(button.dataset.tuneRow)]}. Activate to cycle; arrows change.`,
+    );
   }
 }
 
-function openDialog(kind, html, preserveScroll = false) {
-  const scroll = preserveScroll ? dialog.querySelector('.dialog-inner')?.scrollTop ?? 0 : 0;
-  if (!dialog.open) returnFocus = document.activeElement;
-  dialogKind = kind;
-  dialog.className = `game-dialog ${kind}-dialog`;
-  dialog.innerHTML = `<div class="dialog-inner">${html}</div>`;
-  if (!dialog.open) dialog.showModal();
-  dialog.querySelector('.dialog-inner').scrollTop = scroll;
-}
-
-function focusDialogSection(selector, focusSelector) {
-  const section = dialog.querySelector(selector);
-  const owner = dialog.querySelector('.dialog-inner');
-  const top = owner.scrollTop + section.getBoundingClientRect().top - owner.getBoundingClientRect().top - dialog.querySelector('.dialog-header').offsetHeight - 12;
-  owner.scrollTo({ top, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
-  dialog.querySelector(focusSelector).focus({ preventScroll: true });
-}
-
-function dialogHeader(kicker, title, close = true) {
-  return `<header class="dialog-header"><div><p class="dialog-kicker">${esc(kicker)}</p><h2 id="dialog-title">${esc(title)}</h2></div>${close ? '<button class="close-button" data-action="close" aria-label="Close dialog">×</button>' : ''}</header>`;
-}
-
-function closeDialog() {
-  if (dialogKind === 'guide' && guideReturn) { returnFromGuide(); return; }
-  if (dialogKind === 'intro' && !state.started) { state.started = true; persist(); }
-  dialog.close();
-  dialogKind = '';
-  encounter = null;
-  guideReturn = null;
-  const opener = returnFocus?.isConnected ? returnFocus : document.querySelector('#world');
-  opener?.focus({ preventScroll: true });
-}
-
-function showIntro() {
-  openDialog('intro', `${dialogHeader('AN ORIGINAL PIXEL-ART ADVENTURE', 'Welcome to Bitbound')}<div class="dialog-content"><div class="intro-scene"><canvas id="intro-art" width="480" height="288" aria-label="A traveler and leafy spirit meet in a pixel-art woodland beneath a glowing sky"></canvas></div><p class="eyebrow">SMALL BITS. BIG ADVENTURE.</p><h1 class="intro-title">BITBOUND</h1><p class="intro-lede">An island of tiny tensor spirits is running out of room.<br />Can you make their magic smaller without losing its spark?</p><div class="intro-facts"><span><strong>7</strong> spirits to befriend</span><span><strong>0</strong> math prerequisites</span><span><strong>∞</strong> room to experiment</span></div><button class="primary-button start-button" data-action="start">${state.started ? 'Return to adventure' : 'Start adventure'} →</button><p class="intro-controls">WASD / arrows to wander · E to interact · tap to visit<br />Your adventure saves here. Sound is off until you choose it.</p><p class="intro-boundary">Real quantization math in a small toy world. Not a GPU benchmark.</p></div>`);
-  drawStoryScene(document.querySelector('#intro-art'));
-}
-
-function drawStoryScene(canvas, ending = false) {
-  const ctx = canvas.getContext('2d');
-  const rect = (color, x, y, w, h) => { ctx.fillStyle = color; ctx.fillRect(x, y, w, h); };
-  ctx.imageSmoothingEnabled = false;
-  rect('#19382f', 0, 0, 480, 288);
-  rect('#244c3e', 0, 76, 480, 45);
-  rect('#42634b', 0, 121, 480, 45);
-  rect('#759063', 0, 166, 480, 122);
-  for (let i = 0; i < 35; i++) {
-    const x = (i * 83 + 29) % 480;
-    const y = (i * 47 + 13) % 108;
-    rect(i % 3 ? '#b6cc97' : '#f5e3ab', x, y, 2, 2);
+function updatePhoneUi() {
+  const hud = document.querySelector("#phone-hud");
+  const panel = document.querySelector("#phone-panel");
+  const phone = phoneMedia.matches;
+  hud.hidden = !phone || mode === "title";
+  panel.hidden = !phone;
+  if (!phone) return;
+  const inBattle =
+    mode === "battle" || (mode === "paused" && returnMode === "battle");
+  const hero = inBattle ? battle.hero : state.hero;
+  document.querySelector("#phone-location").textContent = inBattle
+    ? battle.boss
+      ? battle.foe.friend
+      : "Staticling"
+    : world.getZone().name;
+  document.querySelector("#phone-health").textContent =
+    `HP ${hero.hp}/${hero.maxHp}`;
+  document.querySelector("#phone-objective").textContent = inBattle
+    ? `FOE ${battle.hp}/${battle.maxHp}`
+    : nextObjective(state, world.getPosition());
+  document.querySelector("#phone-charge").textContent = `${hero.bytes}B mana`;
+  panel.classList.toggle("in-battle", inBattle);
+  panel.dataset.phase = inBattle ? battle.phase : mode;
+  const loadout = document.querySelector("#phone-loadout");
+  loadout.hidden = !inBattle;
+  if (inBattle)
+    loadout.textContent = `W${battle.gear.weightBits}/A${battle.gear.activationBits} · Cast ${battle.prepared.bytes}B · Snacks ${hero.snacks}`;
+  const castInfo = document.querySelector("#phone-cast");
+  castInfo.hidden = !inBattle || mode === "paused" || battle.phase === "aim";
+  if (inBattle) {
+    const preview = battle.phase === "tune";
+    const packet = feedbackSummary(battle);
+    const caption = feedbackCaption(battle, { preview });
+    if (preview) {
+      const grid = packet.activation
+        .map(
+          (p) =>
+            `0=code ${p.zeroCode} [${Number(p.min.toFixed(2))},${Number(p.max.toFixed(2))}]`,
+        )
+        .join(" / ");
+      castInfo.textContent = `${packet.payloadBytes}B payload + ${packet.metadataBytes}B rulers. ${grid}. ${caption}`;
+    } else castInfo.textContent = caption;
+    if (!castInfo.textContent) castInfo.hidden = true;
   }
-  for (let ring = 0; ring < 7; ring++) rect(['#547556','#739563','#a7b97b','#d6d594','#f2dfa5','#f5e7bd','#f7eac9'][ring], 336 + ring * 3, 24 + ring * 3, 62 - ring * 6, 62 - ring * 6);
-  for (let i = 0; i < 16; i++) {
-    const x = i * 36 - 26;
-    const height = 55 + (i * 13 % 47);
-    rect('#19392f', x + 14, 166 - height, 8, height);
-    rect('#315743', x, 152 - height, 34, height - 4);
-    rect('#426a4d', x + 5, 144 - height, 24, height - 4);
-    rect('#527951', x + 10, 140 - height, 14, 22);
+  let message = "";
+  let options = "";
+  const key = `${mode}:${battle?.phase}:${resetQuestion}`;
+  if (mode === "title")
+    message = `${state.music ? "Start with original music." : "Music is muted."} A or Enter to begin.`;
+  else if (mode === "world")
+    message = (
+      noticeUntil > performance.now()
+        ? notice
+        : world.getPrompt() || "Hold D-pad to walk. A interacts. B pauses."
+    ).replace(/^E:/, "A:");
+  else if (mode === "dialogue") {
+    message = dialogue;
+    options = "<button data-phone-confirm>Continue · A</button>";
+  } else if (mode === "ending") {
+    message = "Seven friends. The island is alive again!";
+    options = "<button data-phone-confirm>Keep exploring · A</button>";
+  } else if (mode === "paused") {
+    message = resetQuestion
+      ? "Start a new game? This replaces your RPG save."
+      : "Paused · D-pad chooses, A confirms, B returns.";
+    const labels = resetQuestion
+      ? ["Keep adventure", "Reset RPG save"]
+      : ["Resume", state.music ? "Music on" : "Music off", "New game"];
+    options = labels
+      .map(
+        (label, index) =>
+          `<button data-phone-pause="${index}">${label}</button>`,
+      )
+      .join("");
+  } else if (mode === "battle") {
+    message =
+      battle.phase === "aim"
+        ? `Pulse ${battle.shots.length + 1}/3. Press A on the gold target. Green is the rebuilt signal.`
+        : battle.phase === "tune"
+          ? "D-pad chooses / changes. A cycles. B returns."
+          : battle.message;
+    if (battle.phase === "menu")
+      options = COMMANDS.map(
+        (name, index) =>
+          `<button data-phone-command="${index}">${name}</button>`,
+      ).join("");
+    else if (battle.phase === "tune")
+      options =
+        Array.from(
+          { length: 4 },
+          (_, index) => `<button data-phone-tune="${index}"></button>`,
+        ).join("") + "<button data-phone-back>Back · B</button>";
+    else if (battle.phase === "aim")
+      options = "<button data-phone-confirm>A · Stop pulse</button>";
+    else if (battle.phase === "result")
+      options = "<button data-phone-confirm>Continue · A</button>";
   }
-  rect('#345e51', 0, 214, 480, 74);
-  rect('#477968', 0, 219, 480, 69);
-  for (let i = 0; i < 20; i++) rect('#72a38a', (i * 37) % 480, 226 + (i * 11 % 55), 14 + i % 9, 2);
-  rect('#4b6549', 116, 181, 248, 31);
-  rect('#728354', 108, 177, 264, 27);
-  rect('#9ba969', 116, 174, 248, 20);
-  rect('#c5b985', 173, 177, 146, 21);
-  rect('#ac9d71', 169, 198, 150, 8);
-  for (let i = 0; i < 18; i++) {
-    const x = 128 + (i * 29 % 217);
-    const y = 184 + (i * 7 % 12);
-    rect('#55704a', x, y, 2, 4);
-    if (i % 3 === 0) rect(i % 2 ? '#e0a4a0' : '#e9d6a0', x - 1, y - 2, 4, 3);
+  document.querySelector("#phone-message").textContent = message;
+  if (phoneLayout !== key) {
+    document.querySelector("#phone-options").innerHTML = options;
+    phoneLayout = key;
   }
-  if (ending) {
-    LESSONS.forEach((lesson, i) => drawSprite(ctx, lesson.sprite, 74 + i * 48, 135 + (i % 2) * 8, 2));
-  } else {
-    drawSprite(ctx, 'player', 171, 142, 2);
-    drawSprite(ctx, 'sprout', 246, 142, 2);
-    rect('#304434', 225, 187, 15, 4);
-    rect('#dfad63', 229, 173, 7, 14);
-    rect('#f4dca1', 230, 169, 5, 11);
-    rect('#f7eac9', 231, 167, 3, 6);
+  for (const button of document.querySelectorAll("[data-phone-command]"))
+    button.classList.toggle(
+      "selected",
+      Number(button.dataset.phoneCommand) === battle?.menu,
+    );
+  for (const button of document.querySelectorAll("[data-phone-pause]")) {
+    button.classList.toggle(
+      "selected",
+      Number(button.dataset.phonePause) === pauseChoice,
+    );
+    if (Number(button.dataset.phonePause) === 1 && !resetQuestion)
+      button.textContent = state.music ? "Music on" : "Music off";
   }
-  rect('#e6c075', 49, 226, 5, 10);
-  rect('#c9dea0', 53, 221, 6, 8);
-  rect('#c9dea0', 436, 207, 5, 9);
-  rect('#e6c075', 440, 203, 4, 7);
-}
-
-function safeConfig(lesson, variant = 'base') {
-  const saved = state.loadouts[loadoutKey(lesson.id, variant)] ?? {};
-  return Object.fromEntries(lesson.controls.map(control => [control.key,
-    control.options.some(option => option.value === saved[control.key]) ? saved[control.key] : lesson.initial[control.key]]));
-}
-
-function loadoutKey(id, variant = 'base') {
-  return variant === 'base' ? id : `${id}:${variant}`;
-}
-
-function openEncounter(id) {
-  if (dialog.open && dialogKind !== 'encounter') return;
-  if (id > state.completed.length) return toast(`The path opens after you befriend ${LESSONS[id - 1].name}.`);
-  const lesson = LESSONS[id];
-  encounter = { lesson, variant: 'base', config: safeConfig(lesson), result: null, answer: null, hint: false, previous: null, signal: 0 };
-  audio.play('select');
-  renderEncounter();
-}
-
-function renderEncounter(focusSelector, preserveScroll = false) {
-  const anchorTop = preserveScroll && focusSelector ? dialog.querySelector(focusSelector)?.getBoundingClientRect().top : undefined;
-  const { lesson, config, variant, result, answer, hint, previous } = encounter;
-  const practice = lesson.variants?.find(item => item.id === variant);
-  const preview = result ?? evaluateEncounter(lesson.id, config, variant);
-  const signal = preview.points[Math.min(encounter.signal, preview.points.length - 1)];
-  const passed = result?.passed === true;
-  const correct = answer !== null && lesson.question.options[answer]?.correct;
-  openDialog('encounter', `${dialogHeader(`${esc(lesson.place)} · CHAPTER ${lesson.id + 1}`, lesson.title)}<div class="dialog-content" style="--biome:${colors[lesson.id]}">
-    <div class="encounter-banner"><img class="encounter-sprite" src="${sprite(lesson.sprite)}" alt="${esc(lesson.name)}" /><div class="encounter-title"><span class="type-chip">${esc(lesson.concept)}</span><div class="dialogue-box"><span class="guardian-name">${esc(lesson.name)}</span><p>${esc(result ? result.passed ? lesson.dialogue[1] : result.feedback : lesson.dialogue[0])}</p></div></div></div>
-    ${!result ? `<div class="encounter-scene"><canvas id="encounter-art" width="560" height="126" aria-label="${esc(SCENE_CAPTIONS[lesson.id])}"></canvas><p class="scene-caption">${esc(SCENE_CAPTIONS[lesson.id])}</p></div>` : ''}
-    <div class="mission-goal"><span>${practice ? 'REPLAY CONTRACT' : 'MISSION'}</span><p>${esc(practice?.goal ?? lesson.goal)}</p>${lesson.id === 0 ? '<p class="control-help">One byte is eight bits. Rebuilding error (MSE) averages squared differences: lower is closer. Meet both the error limit and the byte budget.</p>' : ''}</div>
-    ${state.completed.includes(lesson.id) && lesson.variants?.length ? `<nav class="replay-contracts" aria-label="Choose a practice case"><button class="replay-button ${variant === 'base' ? 'selected' : ''}" data-variant="base" aria-pressed="${variant === 'base'}">Original encounter</button>${lesson.variants.map(item => `<button class="replay-button ${variant === item.id ? 'selected' : ''}" data-variant="${esc(item.id)}" aria-pressed="${variant === item.id}">${esc(item.label)}</button>`).join('')}</nav>` : ''}
-    ${practice ? `<p class="case-note">${esc(practice.description)} This is another practice case, not a generalization certificate.</p>` : ''}
-    <div class="encounter-grid"><section class="tuning-panel" aria-label="Choose your quantization loadout"><h3 class="eyebrow" id="loadout-title" tabindex="-1">YOUR LOADOUT</h3>${lesson.controls.map(control => `<fieldset class="control-group"><legend>${esc(control.label)}</legend><p class="control-help">${esc(control.help)}</p><div class="option-grid">${control.options.map((option, i) => `<button class="option-button ${config[control.key] === option.value ? 'selected' : ''}" data-control="${esc(control.key)}" data-option="${i}" aria-pressed="${config[control.key] === option.value}"><span>${esc(option.label)}</span><small>${esc(option.detail)}</small></button>`).join('')}</div></fieldset>`).join('')}<button class="primary-button run-button" data-action="cast">Cast Quantize →</button><button class="hint-button" data-action="hint" aria-expanded="${hint}">${hint ? 'Hide field hint' : 'Need a field hint?'}</button>${hint ? `<div class="hint-box">${esc(lesson.hint)}</div>` : ''}<p class="control-help">Experiment as often as you like. Changing a setting clears the old result.</p></section>
-    <section class="experiment-panel" aria-label="Numerical experiment"><div class="experiment-screen"><div class="chart-heading"><h3>${esc(preview.chartLabel)}</h3><span>${result ? 'TESTED LOADOUT' : 'LIVE PREVIEW'}</span></div><div class="chart-legend"><span>□ Original</span><span>■ Reconstructed</span><span class="clipping-key">■ Clipped</span></div><div class="quant-chart"><canvas id="quant-chart" width="560" height="174" aria-label="Original and reconstructed values. Exact values and errors are available in the numerical trace below."></canvas></div>${result ? `<div class="metrics-grid">${result.checks.map(check => `<div class="metric ${check.ok ? 'good' : 'bad'}"><span class="metric-label">${check.ok ? '✓' : '◇'} ${esc(check.label)}</span><strong class="metric-value">${esc(check.value)}</strong><span class="metric-target">Target: ${esc(check.target)}</span></div>`).join('')}</div>` : '<div class="empty-experiment"><strong>What happens when you change the loadout?</strong><p>The preview is live. Cast Quantize to test your choices against the mission.</p></div>'}
-    <div class="signal-inspector"><label for="signal-choice">Inspect a signal <select id="signal-choice">${preview.points.map((_, i) => `<option value="${i}" ${encounter.signal === i ? 'selected' : ''}>${i + 1}</option>`).join('')}</select></label><p><strong>${fmt(signal.value)}</strong> original → <strong>${signal.code}</strong> integer code → <strong>${fmt(signal.reconstructed)}</strong> rebuilt <span>(error ${fmt(signal.error)}${signal.clipped ? '; clipped' : ''})</span></p>${lesson.id === 0 ? '<p>A tensor is a pack of numbers. We store short codes, then use a ruler (the scale) to read them back.</p>' : ''}</div>
-    <div class="storage-caption">Stored tensor: <strong>${preview.storage.total} B</strong> = ${preview.storage.payload} B payload + ${preview.storage.metadata} B scale/zero-point metadata</div><div class="storage-bar" aria-hidden="true"><span class="storage-segment" style="width:${preview.storage.payload / preview.storage.total * 100}%"></span><span class="storage-segment metadata" style="width:${preview.storage.metadata / preview.storage.total * 100}%"></span></div><p class="control-help">Toy packed format. Not total device memory or a speed measurement.</p>
-    ${previous ? `<details class="math-details"><summary>Compare your last cast</summary><p>${esc(previous.loadout)}</p><ul>${previous.checks.map(check => `<li>${esc(check.label)}: ${esc(check.value)} ${check.ok ? '✓' : '◇'}</li>`).join('')}</ul></details>` : ''}
-    <details class="math-details"><summary>Open numerical trace & equations</summary><pre>${esc(preview.math)}\n${preview.params.map((p, i) => `Group ${i + 1}: scale=${fmt(p.scale)}, zero=${p.zero}, codes ${p.qmin}…${p.qmax}`).join('\n')}</pre><div class="trace-scroll"><table><caption>Actual quantize/dequantize values</caption><thead><tr><th>Input</th><th>Code</th><th>Rebuilt</th><th>Error</th><th>Group</th></tr></thead><tbody>${preview.points.map(point => `<tr><td>${fmt(point.value)}</td><td>${point.code}</td><td>${fmt(point.reconstructed)}</td><td>${fmt(point.error)}${point.clipped ? ' clipped' : ''}</td><td>${(point.group ?? 0) + 1}</td></tr>`).join('')}</tbody></table></div>${preview.extras?.length ? `<ul class="extras">${preview.extras.map(extra => `<li><strong>${esc(extra.label)}:</strong> ${esc(extra.value)}</li>`).join('')}</ul>` : ''}</details></div></section></div>
-    ${result ? `<section class="result-feedback ${passed ? 'success' : 'retry'}" role="status" aria-live="polite"><div class="cast-outcome"><img src="${sprite(lesson.sprite)}" alt="" /><div><span class="guardian-name">${esc(lesson.name)}</span><h3 id="result-title" tabindex="-1">${passed ? esc(chapterOutcomes[lesson.id]) : `${esc(lesson.name)} has a new clue.`}</h3></div></div>${passed ? '<button class="primary-button field-step" data-action="field-check">Finish the field check ↓</button>' : '<button class="secondary-button field-step" data-action="adjust-loadout">Adjust your loadout ↑</button>'}<canvas id="encounter-art" class="outcome-scene" width="560" height="126" aria-label="${esc(SCENE_CAPTIONS[lesson.id])}"></canvas><p>${esc(result.feedback)}</p><p class="result-insight">${esc(result.insight)}</p></section>` : ''}
-    ${passed ? `<section class="transfer-panel"><p class="eyebrow">ONE LAST FIELD CHECK · APPLY WHAT YOU FOUND</p><h3 class="transfer-title" tabindex="-1">${esc(lesson.question.prompt)}</h3><div class="answer-grid">${lesson.question.options.map((option, i) => `<button class="answer-button ${answer === i ? 'selected' : ''}" data-answer="${i}" aria-pressed="${answer === i}">${esc(option.label)}</button>`).join('')}</div>${answer !== null ? `<p class="answer-feedback ${correct ? 'success' : 'retry'}" role="status" tabindex="-1">${correct ? '✓' : '◇'} ${esc(lesson.question.options[answer].explanation)}</p>${!correct ? '<button class="secondary-button" data-action="field-check">Try another answer ↑</button>' : ''}` : ''}${correct ? `<button class="primary-button capture-button" data-action="capture">${state.completed.includes(lesson.id) ? 'Reaffirm your bond' : `Befriend ${esc(lesson.name)}`} →</button>` : ''}</section>` : ''}
-    <div class="encounter-footnote"><span>${state.completed.includes(lesson.id) ? 'REPLAY · EXPERIMENT WITH A DIFFERENT LOADOUT' : 'NO TIMER · EVERY EXPERIMENT IS A CLUE'}</span><button class="research-link" data-guide="${esc(lesson.sourceIds[0])}">Read the field notes ↗</button></div>
-    </div>`, preserveScroll);
-  drawQuantizationChart(document.querySelector('#quant-chart'), preview);
-  drawEncounterScene(document.querySelector('#encounter-art'), lesson, preview, config, Boolean(result));
-  const target = focusSelector ? dialog.querySelector(focusSelector) : null;
-  if (target) {
-    if (anchorTop !== undefined) dialog.querySelector('.dialog-inner').scrollTop += target.getBoundingClientRect().top - anchorTop;
-    target.focus({ preventScroll: preserveScroll });
-  }
-}
-
-function drawQuantizationChart(canvas, result) {
-  const ctx = canvas.getContext('2d');
-  const width = canvas.width;
-  const height = canvas.height;
-  ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = '#10231e'; ctx.fillRect(0, 0, width, height);
-  const points = result.points;
-  if (!points.length) return;
-  const min = Math.min(0, ...points.flatMap(p => [p.value, p.reconstructed]));
-  const max = Math.max(0, ...points.flatMap(p => [p.value, p.reconstructed]));
-  const span = max - min || 1;
-  const y = value => 20 + (max - value) / span * (height - 48);
-  ctx.font = '11px monospace';
-  ctx.textBaseline = 'middle';
-  for (let i = 0; i <= 4; i++) {
-    const value = max - span * i / 4;
-    const yy = Math.round(y(value));
-    ctx.fillStyle = '#294238'; ctx.fillRect(42, yy, width - 55, 1);
-    ctx.fillStyle = '#a0b6a0'; ctx.fillText(fmt(value), 4, yy);
-  }
-  const step = (width - 66) / points.length;
-  for (let i = 0; i < points.length; i++) {
-    const p = points[i];
-    const x = Math.round(48 + step * (i + 0.5));
-    const originalY = Math.round(y(p.value));
-    const rebuiltY = Math.round(y(p.reconstructed));
-    ctx.fillStyle = p.clipped ? '#d99593' : '#dfbc73';
-    ctx.fillRect(x - 1, Math.min(originalY, rebuiltY), 2, Math.max(2, Math.abs(originalY - rebuiltY)));
-    ctx.strokeStyle = '#f7eac9'; ctx.lineWidth = 1; ctx.strokeRect(x - 4, originalY - 4, 8, 8);
-    ctx.fillStyle = p.clipped ? '#d99593' : '#b6db8c'; ctx.fillRect(x - 2, rebuiltY - 2, 5, 5);
-    if (points.length <= 32 && (i % Math.max(1, Math.ceil(points.length / 16)) === 0)) {
-      ctx.fillStyle = '#8ca78f'; ctx.fillText(String(i + 1), x - 3, height - 11);
+  if (mode === "battle" && battle.phase === "tune") {
+    const labels = tuneLabels();
+    for (const button of document.querySelectorAll("[data-phone-tune]")) {
+      const row = Number(button.dataset.phoneTune);
+      button.textContent = labels[row];
+      button.classList.toggle("selected", row === battle.tuneRow);
     }
   }
 }
-
-function cast() {
-  if (!encounter) return;
-  if (encounter.result) encounter.previous = {
-    loadout: encounter.lesson.controls.map(c => `${c.label}: ${c.options.find(o => o.value === encounter.config[c.key]).label}`).join(' · '),
-    checks: encounter.result.checks,
-  };
-  encounter.result = evaluateEncounter(encounter.lesson.id, encounter.config, encounter.variant);
-  encounter.answer = null;
-  state.experiments[encounter.lesson.id]++;
-  state.loadouts[loadoutKey(encounter.lesson.id, encounter.variant)] = { ...encounter.config };
-  persist();
-  audio.play(encounter.result.passed ? 'win' : 'retry');
-  renderEncounter();
-  focusDialogSection('.result-feedback', '#result-title');
-}
-
-function capture() {
-  const current = encounter;
-  if (!current?.result?.passed || !current.lesson.question.options[current.answer]?.correct) return;
-  const { lesson } = current;
-  const first = !state.completed.includes(lesson.id);
-  if (first) {
-    if (lesson.id !== state.completed.length) return;
-    state.completed.push(lesson.id);
-  }
-  state.loadouts[loadoutKey(lesson.id, current.variant)] = { ...current.config };
-  persist();
-  refreshProgress();
-  audio.play('capture');
-  openDialog('capture', `${dialogHeader(first ? 'A NEW FRIEND JOINS YOUR JOURNEY' : 'YOUR BOND GROWS STRONGER', first ? `${lesson.name} joined your team!` : `${lesson.name}, a bond reaffirmed!`)}<div class="dialog-content capture-screen" style="--biome:${colors[lesson.id]}"><div class="capture-art"><div class="capture-rays"></div><img src="${sprite(lesson.sprite)}" alt="${esc(lesson.name)}, ${first ? 'your new companion' : 'your trusted companion'}" /></div><h2 class="capture-title">${esc(lesson.name)} + you</h2><span class="reward-badge">${esc(lesson.concept)} BADGE</span><p class="takeaway">${esc(lesson.takeaway)}</p><p>${first ? lesson.id === 6 ? 'Every spirit is safe. The Tensor Isles have their spark back.' : `A new path opens: ${esc(LESSONS[lesson.id + 1].place)}.` : 'There is always another loadout to explore.'}</p><button class="primary-button continue-button" data-action="continue" data-finished="${lesson.id === 6 && state.completed.length === 7}">${lesson.id === 6 && state.completed.length === 7 ? 'See the island restored' : 'Back to the adventure'} →</button><button class="research-link" data-guide="${esc(lesson.sourceIds[0])}">Keep the field note ↗</button></div>`);
-}
-
-function showGuide(id) {
-  const entry = GUIDE.find(item => item.id === id) ?? GUIDE[0];
-  const changingTopic = dialog.open && dialogKind === 'guide';
-  const navScroll = changingTopic ? dialog.querySelector('.guide-nav').scrollTop : 0;
-  if (!changingTopic) guideReturn = dialog.open ? {
-    kind: dialogKind,
-    html: dialog.querySelector('.dialog-inner').innerHTML,
-    scroll: dialog.querySelector('.dialog-inner').scrollTop,
-    topic: entry.id,
-  } : null;
-  openDialog('guide', `${dialogHeader('RESEARCH-BACKED FIELD NOTES', 'The Quantization Field Guide')}<div class="dialog-content"><p class="guide-intro">Start with the intuition. Open the equations. Follow the original research.</p><div class="guide-layout"><nav class="guide-nav" aria-label="Field guide topics">${GUIDE.map(item => `<button class="${item.id === entry.id ? 'active' : ''}" data-guide="${esc(item.id)}" ${item.id === entry.id ? 'aria-current="page"' : ''}>${esc(item.title)}</button>`).join('')}</nav><article class="guide-article"><span class="guide-tag">${esc(entry.tag)}</span><h2>${esc(entry.title)}</h2><p class="guide-summary">${esc(entry.summary)}</p>${entry.body.map(paragraph => `<p>${esc(paragraph)}</p>`).join('')}${entry.formula ? `<pre class="formula">${esc(entry.formula)}</pre>` : ''}<h3>Primary sources</h3><ul class="source-list">${entry.sources.map(source => `<li><a href="${esc(source.url)}" target="_blank" rel="noopener noreferrer">${esc(source.label)} ↗</a></li>`).join('')}</ul></article></div><p class="guide-boundary">The island is a teaching model. Successful toy experiments are not evidence that a real LLM meets an accuracy or latency target.</p></div>`, changingTopic);
-  if (guideReturn) {
-    const back = document.createElement('button');
-    back.className = 'secondary-button guide-back';
-    back.dataset.action = 'guide-back';
-    const destination = { encounter: 'your experiment', collection: 'your journal', ending: 'your ending', capture: 'your companion' };
-    back.textContent = `← Back to ${destination[guideReturn.kind] ?? 'the adventure'}`;
-    document.querySelector('.guide-intro').after(back);
-  }
-  dialog.querySelector('.guide-nav').scrollTop = navScroll;
-  dialog.querySelector('.guide-nav [aria-current="page"]').focus({ preventScroll: true });
-}
-
-function returnFromGuide() {
-  const previous = guideReturn;
-  if (!previous) return;
-  guideReturn = null;
-  openDialog(previous.kind, previous.html);
-  if (previous.kind === 'encounter' && encounter) {
-    const preview = encounter.result ?? evaluateEncounter(encounter.lesson.id, encounter.config, encounter.variant);
-    drawQuantizationChart(dialog.querySelector('#quant-chart'), preview);
-    drawEncounterScene(dialog.querySelector('#encounter-art'), encounter.lesson, preview, encounter.config, Boolean(encounter.result));
-  } else if (previous.kind === 'ending') drawStoryScene(dialog.querySelector('#ending-art'), true);
-  dialog.querySelector('.dialog-inner').scrollTop = previous.scroll;
-  dialog.querySelector(`[data-guide="${previous.topic}"]`)?.focus({ preventScroll: true });
-}
-
-function showTeam(id) {
-  const lesson = LESSONS[id];
-  if (lesson && !state.completed.includes(id)) return toast(`This spirit is still waiting in ${lesson.place}. Follow your current quest to meet it.`);
-  const content = lesson ? `<div class="collection-detail"><img class="collection-art" src="${sprite(lesson.sprite)}" alt="${esc(lesson.name)}" /><div class="collection-lore"><span class="badge-label">${esc(lesson.concept)} BADGE</span><h2>${esc(lesson.name)}</h2><p>${esc(lesson.place)}</p><p>${esc(lesson.takeaway)}</p><p>${state.experiments[id]} numerical experiment${state.experiments[id] === 1 ? '' : 's'} explored.</p><button class="primary-button" data-replay="${id}">Visit for another experiment →</button><button class="secondary-button" data-guide="${esc(lesson.sourceIds[0])}">Read the research</button></div></div>` : `<p>Every spirit keeps a lesson. Your team grows when you solve an experiment and apply what you discovered.</p><div class="collection-grid journal-grid">${teamSlots()}</div>${state.completed.length ? `<p>${state.completed.length} bonds made. Select a companion to revisit its lesson.</p>` : '<p>Your first friend is waiting in Bitleaf Meadow. Meet Nib to begin.</p><button class="primary-button" data-replay="0">Meet Nib →</button>'}`;
-  openDialog('collection', `${dialogHeader('YOUR COMPANIONS · YOUR DISCOVERIES', 'The Spirit Journal')}<div class="dialog-content">${content}</div>`);
-}
-
-function showEnding() {
-  if (state.completed.length !== 7) return;
-  openDialog('ending', `${dialogHeader('THE TENSOR ISLES ARE RESTORED', 'A precision ranger, at last.')}<div class="dialog-content"><div class="ending-scene"><canvas id="ending-art" width="480" height="288" aria-label="All seven original spirits gather on a restored island"></canvas></div><h2 class="ending-title">Small bits.<br />A brighter world.</h2><p>You did not save the island by choosing the smallest number.<br />You explored <strong>where precision matters.</strong></p><div class="ending-stats"><span><strong>7</strong> spirits befriended</span><span><strong>${state.experiments.reduce((a, b) => a + b, 0)}</strong> experiments explored</span><span><strong>1</strong> precision ranger</span></div><div class="ending-creatures">${LESSONS.map(l => `<img src="${sprite(l.sprite)}" alt="${esc(l.name)}" />`).join('')}</div><p class="ending-note">Your real-world quest: compare model quality on held-out tasks, account for weights + activations + KV cache, and measure latency on your target device. A toy-world win is a beginning, not a deployment certificate.</p><div class="ending-actions"><button class="primary-button" data-action="close">Keep exploring →</button><button class="secondary-button" data-guide="deployment">Plan a real deployment</button></div></div>`);
-  drawStoryScene(document.querySelector('#ending-art'), true);
-}
-
-function showSettings() {
-  openDialog('settings', `${dialogHeader('MAKE YOURSELF AT HOME', 'Adventure settings')}<div class="dialog-content settings-panel"><div class="setting-row"><div><h3>Original chip sounds</h3><p>Quiet synthesized tones. No audio downloads.</p></div><button class="secondary-button" data-action="sound" aria-pressed="${state.sound}">${state.sound ? 'Sound on' : 'Sound off'}</button></div><div class="setting-row"><div><h3>Motion</h3><p>The game respects your device’s reduced-motion setting. No timers or flashing effects.</p></div></div><div class="setting-row"><div><h3>Your save</h3><p>${storageAvailable ? 'Stored only in this browser on this device. No account, tracking or upload.' : 'This browser is blocking local storage. Progress is available for this session only.'}</p></div></div><div class="setting-row"><button class="secondary-button" data-action="intro">Replay the introduction</button><button class="secondary-button danger-button" data-action="reset-question">Start a new adventure</button></div></div>`);
-}
-
-function toggleSound() {
-  state.sound = !state.sound;
-  audio.setEnabled(state.sound);
-  persist();
-  document.querySelectorAll('[data-action="sound"]').forEach(button => { button.textContent = state.sound ? 'Sound on' : 'Sound off'; button.setAttribute('aria-pressed', state.sound); });
-}
-
-function onDialogClick(event) {
-  const target = event.target.closest('button');
-  if (!target) return;
-  if (target.dataset.variant !== undefined && encounter && state.completed.includes(encounter.lesson.id)) {
-    const variant = target.dataset.variant;
-    if (variant !== 'base' && !encounter.lesson.variants?.some(item => item.id === variant)) return;
-    encounter.variant = variant;
-    encounter.config = safeConfig(encounter.lesson, variant);
-    encounter.result = null;
-    encounter.answer = null;
-    encounter.previous = null;
-    encounter.signal = 0;
-    renderEncounter(`[data-variant="${variant}"]`, true);
-    return;
-  }
-  if (target.dataset.control) {
-    const control = encounter.lesson.controls.find(c => c.key === target.dataset.control);
-    const option = control.options[Number(target.dataset.option)];
-    if (encounter.result) encounter.previous = { loadout: encounter.lesson.controls.map(c => `${c.label}: ${c.options.find(o => o.value === encounter.config[c.key]).label}`).join(' · '), checks: encounter.result.checks };
-    encounter.config[control.key] = option.value;
-    state.loadouts[loadoutKey(encounter.lesson.id, encounter.variant)] = { ...encounter.config };
+const world = new IslandWorld(canvas, {
+  onEncounter: (encounter) => {
+    if (mode !== "world") return;
+    clearInput();
+    battle = new Battle({
+      ...encounter,
+      hero: state.hero,
+      gear: state.gear,
+      completed: state.completed,
+    });
+    mode = "battle";
+    audio.setScene(encounter.boss ? "boss" : "battle");
+    audio.play("select");
+    syncControls();
+    focusGame();
+  },
+  onInteract: (interaction) => {
+    if (mode !== "world") return;
+    clearInput();
+    if (interaction.kind === "camp") {
+      state.hero.hp = state.hero.maxHp;
+      state.hero.bytes = state.hero.maxBytes;
+      state.hero.snacks = Math.max(3, state.hero.snacks);
+      dialogue =
+        "Campfire nap! HP and byte charge restored. Three snacks packed for the road.";
+      audio.play("heal");
+    } else if (interaction.kind === "pickup") {
+      if (state.collected.includes(interaction.id)) return;
+      state.collected.push(interaction.id);
+      state.hero.snacks = Math.min(9, state.hero.snacks + 1);
+      state.hero.bytes = Math.min(state.hero.maxBytes, state.hero.bytes + 32);
+      world.setCollected(state.collected);
+      dialogue = "Found a picnic cache! +1 snack and +32 byte charge.";
+      audio.play("capture");
+    } else
+      dialogue =
+        interaction.text || "The island feels a little brighter with you here.";
+    mode = "dialogue";
     persist();
-    encounter.result = null;
-    encounter.answer = null;
-    audio.play('select');
-    renderEncounter(`[data-control="${control.key}"][data-option="${target.dataset.option}"]`, true);
-    return;
-  }
-  if (target.dataset.answer !== undefined) {
-    encounter.answer = Number(target.dataset.answer);
-    audio.play(encounter.lesson.question.options[encounter.answer].correct ? 'select' : 'retry');
-    renderEncounter();
-    focusDialogSection('.answer-feedback', '.answer-feedback');
-    return;
-  }
-  if (target.dataset.guide) { showGuide(target.dataset.guide); return; }
-  if (target.dataset.creature !== undefined) { showTeam(Number(target.dataset.creature)); return; }
-  if (target.dataset.replay !== undefined) {
-    const id = Number(target.dataset.replay);
-    closeDialog();
-    world.travel(id);
-    return;
-  }
-  switch (target.dataset.action) {
-    case 'close': closeDialog(); break;
-    case 'start': state.started = true; persist(); closeDialog(); document.querySelector('#world').focus(); toast(state.completed.length === 7 ? 'Your island is restored. Revisit a spirit or try a replay contract.' : state.completed.length ? `Welcome back. ${LESSONS[state.completed.length].name} is waiting along the next path.` : 'Welcome, traveler. Meet Nib in the meadow, or follow the golden beacon.'); break;
-    case 'cast': cast(); break;
-    case 'hint': encounter.hint = !encounter.hint; renderEncounter('[data-action="hint"]', true); break;
-    case 'field-check': focusDialogSection('.transfer-panel', '.transfer-title'); break;
-    case 'adjust-loadout': focusDialogSection('.tuning-panel', '#loadout-title'); break;
-    case 'capture': capture(); break;
-    case 'continue': { const finished = target.dataset.finished === 'true'; closeDialog(); if (finished) showEnding(); break; }
-    case 'sound': toggleSound(); break;
-    case 'intro': showIntro(); break;
-    case 'guide-back': returnFromGuide(); break;
-    case 'reset-question': openDialog('settings', `${dialogHeader('YOUR CURRENT SAVE WILL BE REPLACED', 'Start fresh?')}<div class="dialog-content"><p>This removes your seven-spirit adventure from this browser. It does not change anything on GitHub.</p><div class="ending-actions"><button class="primary-button" data-action="close">Keep my adventure</button><button class="secondary-button danger-button" data-action="reset">Start fresh</button></div></div>`); break;
-    case 'reset': closeDialog(); clearTimeout(saveTimer); state = newAdventure(); audio.setEnabled(false); persist(); renderShell(); showIntro(); break;
-  }
+    syncControls();
+    focusGame();
+  },
+  onMove: (position) => {
+    state.position = position;
+    if (!saveTimer)
+      saveTimer = setTimeout(() => {
+        saveTimer = null;
+        persist();
+      }, 650);
+  },
+});
+world.setProgress(state.completed);
+world.setCollected(state.collected);
+if (state.position) world.setPosition(state.position);
+if (state.hero.hp === 0) {
+  state.hero.hp = state.hero.maxHp;
+  state.hero.bytes = 256;
+  world.setPosition({ x: 62, y: 216 });
 }
 
-// One delegated listener survives shell refreshes; native dialogs trap focus.
-document.querySelector('#app').addEventListener('click', event => {
-  if (event.composedPath().includes(dialog)) return;
-  const target = event.target.closest('button');
-  if (!target) return;
-  if (target.dataset.dir) {
-    const directions = { up: [0, -1], left: [-1, 0], down: [0, 1], right: [1, 0] };
-    world.move(...directions[target.dataset.dir]); audio.play('step'); return;
+function begin() {
+  mode = "world";
+  state.started = true;
+  clearInput();
+  audio.setScene("overworld");
+  audio.setEnabled(state.music);
+  audio.unlock().then((running) => {
+    if (state.music && !running)
+      announce("Music is unavailable in this browser.");
+  });
+  announce(
+    state.completed.length
+      ? "Welcome back. Your friends are waiting."
+      : "WASD to explore. E by a spirit. A campfire heals you.",
+    6,
+  );
+  persist();
+  syncControls();
+  focusGame();
+}
+function toggleMusic() {
+  state.music = !state.music;
+  audio.setEnabled(state.music);
+  musicButton.setAttribute("aria-pressed", String(state.music));
+  document.querySelector("#music-label").textContent =
+    `Music ${state.music ? "on" : "off"}`;
+  if (mode !== "title") audio.unlock();
+  persist();
+  syncControls();
+}
+function consumeBattleEvent() {
+  const event = battle?.takeEvent();
+  if (event) {
+    audio.play(event);
+    if (event === "win") audio.setScene("victory");
   }
-  if (target.dataset.travel !== undefined) { world.travel(Number(target.dataset.travel)); return; }
-  if (target.dataset.creature !== undefined) { showTeam(Number(target.dataset.creature)); return; }
-  if (target.dataset.guide) { showGuide(target.dataset.guide); return; }
-  switch (target.dataset.action) {
-    case 'guide': showGuide(); break;
-    case 'sound': toggleSound(); break;
-    case 'settings': showSettings(); break;
-    case 'team': showTeam(); break;
-    case 'ending': showEnding(); break;
-    case 'interact': if (!world.interact()) toast('Move closer to a spirit, or use a location button below the island.'); break;
+}
+function finishBattle() {
+  const outcome = battle.outcome;
+  state.hero = { ...battle.hero };
+  state.gear = { ...battle.gear, range: "native" };
+  world.finishEncounter(battle.uid, outcome === "won");
+  if (outcome === "won") {
+    if (battle.boss && battle.id === state.completed.length) {
+      state.completed.push(battle.id);
+      state.hero.maxHp = 80 + state.completed.length * 8;
+      state.hero.hp = Math.min(state.hero.maxHp, state.hero.hp + 24);
+      state.hero.bytes = Math.min(256, state.hero.bytes + 40);
+      world.setProgress(state.completed);
+      audio.play("capture");
+      const unlocked = {
+        1: "Zero-shift ruler unlocked! TUNE changes your gear.",
+        3: "Channel rulers unlocked! Give small signals their own scale.",
+        5: "Balance ruler unlocked! Share outlier work between inputs and weights.",
+      }[state.completed.length];
+      announce(
+        unlocked ||
+          (state.completed.length === 7
+            ? `${battle.foe.friend} follows you now. The island is restored!`
+            : `${battle.foe.friend} follows you now. Find the next spirit!`),
+        7,
+      );
+    } else {
+      state.hero.bytes = Math.min(256, state.hero.bytes + 16);
+      announce("Static cleared. +16 byte charge!");
+    }
+  } else if (outcome === "lost") {
+    state.hero.hp = state.hero.maxHp;
+    state.hero.bytes = 256;
+    state.hero.snacks = Math.max(3, state.hero.snacks);
+    world.setPosition({ x: 62, y: 216 });
+    announce(
+      "Back at camp. Friends kept. Try different gear or guard the big attacks.",
+      7,
+    );
+  } else announce("You got away. A camp can recharge you.");
+  state.position = world.getPosition();
+  const finalVictory = outcome === "won" && battle.boss && battle.id === 6;
+  battle = null;
+  mode = finalVictory ? "ending" : "world";
+  clearInput();
+  audio.setScene(finalVictory ? "ending" : "overworld");
+  persist();
+  syncControls();
+  focusGame();
+}
+function pause() {
+  returnMode = mode;
+  mode = "paused";
+  pauseChoice = 0;
+  resetQuestion = false;
+  clearInput();
+  syncControls();
+  audio.play("select");
+}
+function resume() {
+  mode = returnMode;
+  resetQuestion = false;
+  clearInput();
+  syncControls();
+  focusGame();
+}
+function confirm() {
+  if (mode === "title") begin();
+  else if (mode === "world") {
+    world.interact();
+  } else if (mode === "dialogue") {
+    mode = "world";
+    clearInput();
+    syncControls();
+    audio.play("select");
+  } else if (mode === "ending") {
+    mode = "world";
+    audio.setScene("overworld");
+    syncControls();
+    announce("All seven spirits are home. The island is yours to explore.");
+  } else if (mode === "battle") {
+    if (battle.phase === "result") finishBattle();
+    else {
+      battle.confirm();
+      consumeBattleEvent();
+      syncControls();
+    }
+  } else if (mode === "paused") {
+    if (resetQuestion) {
+      if (pauseChoice === 0) {
+        resetQuestion = false;
+        pauseChoice = 0;
+      } else {
+        state = newAdventure();
+        clearInput();
+        persist();
+        world.destroy();
+        audio.destroy();
+        window.location.reload();
+        return;
+      }
+    } else if (pauseChoice === 0) resume();
+    else if (pauseChoice === 1) toggleMusic();
+    else {
+      resetQuestion = true;
+      pauseChoice = 0;
+    }
+    audio.play("select");
   }
+}
+function back() {
+  if (mode === "title") return;
+  if (mode === "paused") {
+    if (resetQuestion) {
+      resetQuestion = false;
+      pauseChoice = 0;
+    } else resume();
+  } else if (mode === "dialogue") {
+    mode = "world";
+    syncControls();
+  } else if (mode === "battle" && battle.phase === "tune") {
+    battle.back();
+    consumeBattleEvent();
+    syncControls();
+  } else if (mode === "ending") confirm();
+  else pause();
+}
+function menuMove(dx, dy) {
+  if (mode === "battle") {
+    battle.move(dx, dy);
+    consumeBattleEvent();
+    syncControls();
+  } else if (mode === "paused" && dy) {
+    pauseChoice =
+      (pauseChoice + dy + (resetQuestion ? 2 : 3)) % (resetQuestion ? 2 : 3);
+    audio.play("select");
+  }
+}
+function handleKey(event) {
+  if (
+    event.ctrlKey ||
+    event.metaKey ||
+    event.altKey ||
+    event.target.matches('input, textarea, select, [contenteditable="true"]')
+  )
+    return;
+  if (event.target.closest("a")) return;
+  const key = event.key.toLowerCase();
+  if (
+    ["enter", " "].includes(key) &&
+    event.target.closest(".header-actions, .phone-panel")
+  )
+    return;
+  if (directions[key]) {
+    event.preventDefault();
+    if (mode === "world") held.add(key);
+    else if (!event.repeat) {
+      menuMove(...directions[key]);
+      focusGame();
+    }
+    return;
+  }
+  if (key === "shift") {
+    held.add("shift");
+    return;
+  }
+  if (event.repeat) return;
+  if (["enter", " ", "e", "escape", "m", "q", "f", "1", "2", "3"].includes(key))
+    event.preventDefault();
+  if (key === "m") toggleMusic();
+  else if (key === "f") toggleFullscreen();
+  else if (key === "escape") back();
+  else if (key === "q" && mode === "battle") {
+    battle.cycleBits();
+    consumeBattleEvent();
+  } else if (
+    ["1", "2", "3"].includes(key) &&
+    mode === "battle" &&
+    ["menu", "tune"].includes(battle.phase)
+  ) {
+    battle.gear.weightBits = battle.gear.activationBits = [2, 4, 8][
+      Number(key) - 1
+    ];
+    battle.refresh();
+    audio.play("select");
+  } else if (["enter", " ", "e"].includes(key)) confirm();
+}
+function toggleFullscreen() {
+  const element = document.querySelector(".handheld");
+  if (document.fullscreenElement) document.exitFullscreen();
+  else
+    element
+      .requestFullscreen?.()
+      .catch(() => announce("Full screen is unavailable in this browser."));
+}
+window.addEventListener("keydown", handleKey);
+window.addEventListener("keyup", (event) =>
+  held.delete(event.key.toLowerCase()),
+);
+window.addEventListener("blur", clearInput);
+document.addEventListener("visibilitychange", () => {
+  clearInput();
+  lastFrame = 0;
+});
+canvas.addEventListener("pointerdown", focusGame);
+startButton.addEventListener("click", begin);
+musicButton.addEventListener("click", () => {
+  toggleMusic();
+  focusGame();
+});
+document
+  .querySelector("#fullscreen")
+  .addEventListener("click", toggleFullscreen);
+document.querySelector("#touch-a").addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  confirm();
+  focusGame();
+});
+document.querySelector("#touch-b").addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  back();
+  focusGame();
+});
+document.querySelector("#touch-q").addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  if (mode === "battle") {
+    battle.cycleBits();
+    consumeBattleEvent();
+  }
+  focusGame();
+});
+for (const button of document.querySelectorAll("[data-dir]")) {
+  button.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    button.setPointerCapture(event.pointerId);
+    button.classList.add("held");
+    if (mode === "world") held.add(button.dataset.dir);
+    else menuMove(...directions[button.dataset.dir]);
+    focusGame();
+  });
+  const release = () => {
+    held.delete(button.dataset.dir);
+    button.classList.remove("held");
+  };
+  button.addEventListener("pointerup", release);
+  button.addEventListener("pointercancel", release);
+  button.addEventListener("lostpointercapture", release);
+}
+commands.addEventListener("click", (event) => {
+  const button = event.target.closest("button");
+  if (!button || mode !== "battle") return;
+  if (battle.phase === "menu" && button.dataset.command !== undefined) {
+    battle.menu = Number(button.dataset.command);
+    confirm();
+    focusGame();
+  } else if (battle.phase === "tune" && button.dataset.tuneRow !== undefined) {
+    battle.tuneRow = Number(button.dataset.tuneRow);
+    battle.changeGear();
+    audio.play("select");
+    syncControls();
+  }
+});
+commands.addEventListener("focusin", (event) => {
+  if (battle?.phase === "menu" && event.target.dataset.command !== undefined)
+    battle.menu = Number(event.target.dataset.command);
+  else if (
+    battle?.phase === "tune" &&
+    event.target.dataset.tuneRow !== undefined
+  )
+    battle.tuneRow = Number(event.target.dataset.tuneRow);
+});
+document.querySelector("#phone-options").addEventListener("click", (event) => {
+  const button = event.target.closest("button");
+  if (!button) return;
+  if (
+    button.dataset.phoneCommand !== undefined &&
+    mode === "battle" &&
+    battle.phase === "menu"
+  ) {
+    battle.menu = Number(button.dataset.phoneCommand);
+    confirm();
+  } else if (
+    button.dataset.phoneTune !== undefined &&
+    mode === "battle" &&
+    battle.phase === "tune"
+  ) {
+    battle.tuneRow = Number(button.dataset.phoneTune);
+    battle.changeGear();
+    audio.play("select");
+  } else if (button.dataset.phonePause !== undefined && mode === "paused") {
+    pauseChoice = Number(button.dataset.phonePause);
+    confirm();
+  } else if (button.hasAttribute("data-phone-back")) back();
+  else if (button.hasAttribute("data-phone-confirm")) confirm();
+  updatePhoneUi();
+  focusGame();
+});
+phoneMedia.addEventListener("change", () => {
+  phoneLayout = "";
+  syncControls();
 });
 
-window.addEventListener('keydown', event => {
-  if (dialog.open || event.ctrlKey || event.metaKey || event.altKey) return;
-  const active = document.activeElement;
-  if (active?.matches('input, textarea, select, button, a, [contenteditable="true"]')) return;
-  const key = event.key.toLowerCase();
-  const moves = { arrowup: [0, -1], w: [0, -1], arrowleft: [-1, 0], a: [-1, 0], arrowdown: [0, 1], s: [0, 1], arrowright: [1, 0], d: [1, 0] };
-  if (moves[key]) { event.preventDefault(); world.move(...moves[key]); audio.play('step'); }
-  else if (key === 'e' || key === 'enter') { event.preventDefault(); if (!world.interact()) toast('A spirit is waiting nearby. Tap its landmark or choose a location below.'); }
+function updateReadout() {
+  const inBattle =
+    mode === "battle" || (mode === "paused" && returnMode === "battle");
+  const hero = inBattle ? battle.hero : state.hero;
+  let info;
+  if (inBattle) {
+    info = `${mode === "paused" ? "Paused. " : ""}${battle.foe.name}. ${battle.phase}. Enemy HP ${battle.hp}/${battle.maxHp}. Your HP ${hero.hp}/${hero.maxHp}. Charge ${hero.bytes} bytes. ${battle.message}`;
+    if (battle.phase === "menu")
+      info += ` Selected ${COMMANDS[battle.menu]}. Spell W${battle.gear.weightBits} A${battle.gear.activationBits}, ${battle.prepared.bytes} bytes.`;
+    if (battle.phase === "tune") {
+      const labels = tuneLabels();
+      info += ` Selected ${labels[battle.tuneRow]}. ${labels.join("; ")}. Packet ${battle.prepared.bytes} bytes. ${feedbackCaption(battle, { preview: true })}`;
+      updateDesktopTuneLabels();
+    }
+    if (battle.phase === "aim") {
+      const target = battle.targets[battle.shots.length];
+      canvas.setAttribute(
+        "aria-label",
+        `${info} Pulse ${battle.shots.length + 1}. Target ${target.toFixed(3)}. Your aim ${battle.rawCursor.toFixed(3)}. Rebuilt ${battle.codedCursor.toFixed(3)}. Space to lock.`,
+      );
+    } else canvas.setAttribute("aria-label", info);
+  } else {
+    const position = world.getPosition();
+    info =
+      mode === "title"
+        ? `Bitbound. Enter to ${state.started ? "continue" : "begin"}. ${state.music ? "Starts with music" : "Music muted"}.`
+        : `${world.getZone().name}. HP ${hero.hp}/${hero.maxHp}. Charge ${hero.bytes} bytes. ${state.completed.length}/7 spirits befriended. ${mode === "dialogue" ? dialogue : noticeUntil > performance.now() ? notice : "WASD moves. Shift runs. E interacts."}`;
+    canvas.setAttribute(
+      "aria-label",
+      `${info} Position ${position.x.toFixed(1)}, ${position.y.toFixed(1)}. Mode ${mode}.`,
+    );
+  }
+  if (info !== lastReadout) {
+    document.querySelector("#readout").textContent = info;
+    lastReadout = info;
+  }
+}
+function frame(time) {
+  const dt = lastFrame ? Math.min(0.05, (time - lastFrame) / 1000) : 0;
+  lastFrame = time;
+  requestAnimationFrame(frame);
+  if (document.hidden) return;
+  if (mode === "world") {
+    let x = 0;
+    let y = 0;
+    for (const key of held) {
+      const direction = directions[key];
+      if (direction) {
+        x += direction[0];
+        y += direction[1];
+      }
+    }
+    world.update(dt, {
+      x: Math.sign(x),
+      y: Math.sign(y),
+      dash: held.has("shift"),
+    });
+  } else if (mode === "battle") {
+    const before = battle.phase;
+    battle.update(dt);
+    consumeBattleEvent();
+    if (battle.phase !== before) syncControls();
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  const paintMode = mode === "paused" ? returnMode : mode;
+  if (paintMode === "title")
+    drawTitle(ctx, world, state, time, reducedMotion.matches);
+  else if (paintMode === "battle")
+    drawBattle(ctx, battle, time, reducedMotion.matches, phoneMedia.matches);
+  else if (paintMode === "ending")
+    drawEnding(ctx, state, time, reducedMotion.matches);
+  else {
+    world.render(time);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    if (!phoneMedia.matches) {
+      drawWorldHud(
+        ctx,
+        state,
+        world.getZone(),
+        world.getPosition(),
+        world.getPrompt(),
+        noticeUntil > time ? notice : "",
+      );
+      if (paintMode === "dialogue") drawDialogue(ctx, dialogue);
+    }
+  }
+  if (mode === "paused") {
+    if (phoneMedia.matches) {
+      ctx.fillStyle = "rgba(11,25,37,0.7)";
+      ctx.fillRect(0, 0, 480, 288);
+    } else drawPause(ctx, state, pauseChoice, resetQuestion);
+  }
+  statusClock += dt;
+  musicClock += dt;
+  if (statusClock > 0.12) {
+    statusClock = 0;
+    updateReadout();
+    updatePhoneUi();
+  }
+  if (musicClock > 0.08) {
+    musicClock = 0;
+    let energy = 0;
+    if (audio.analyser && audio.enabled && audio.context?.state === "running") {
+      audio.analyser.getByteTimeDomainData(musicData);
+      for (let i = 0; i < musicData.length; i++)
+        energy += (musicData[i] - 128) ** 2;
+      energy = Math.sqrt(energy / musicData.length) / 32;
+    }
+    musicButton.style.setProperty("--level", String(Math.min(1, energy)));
+    musicButton.dataset.audioState = audio.context?.state ?? "locked";
+    musicButton.dataset.scene = audio.scene;
+    musicButton.dataset.level = energy.toFixed(4);
+  }
+}
+window.addEventListener("pagehide", () => {
+  clearInput();
+  persist();
 });
-window.addEventListener('pagehide', () => { clearTimeout(saveTimer); persist(); });
-renderShell();
-if (!state.started) showIntro();
+syncControls();
+updateReadout();
+requestAnimationFrame(frame);
