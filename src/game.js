@@ -320,7 +320,7 @@ export class Game {
     this.state.camp = campId;
     this.worldScene.world.respawnStaticlings();
     this.audio.play('heal');
-    this.toast('Rested: HP and bytes restored. Staticlings stir again.', { kind: 'notice', ms: 3200 });
+    this.toast('Rested: HP and bytes restored. Awake patrols return home.', { kind: 'notice', ms: 3200 });
     this.save();
   }
 

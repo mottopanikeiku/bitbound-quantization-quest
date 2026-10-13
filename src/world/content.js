@@ -3,6 +3,7 @@
 import { FACTS } from '../content/lessons.js';
 import { GUARDIANS, ZONES, TECHNIQUES } from '../content/game-data.js';
 import { PORTRAIT_IDS } from '../art/portraits.js';
+import { PUZZLES } from './puzzles.js';
 
 export const INTRO_HINT = 'WASD / arrows walk. Shift runs. Enter talks. Esc pauses. N opens Field Notes.';
 const SEEDS = {
@@ -39,18 +40,18 @@ export function fact(zone, index = 0) {
 const JOKES = {
   'meadow-npc-a': ['My research says flowers like compliments. The control group got polite nods.', 'Nib has forgotten all the shades between leaf and leaf. Please help our little sprout.'],
   'meadow-npc-b': ['I tried to put the whole meadow in my pocket. Now my pocket is a meadow.', 'The bridge stones want the *same rung*, not a perfect copy of every height. Try fewer bits.'],
-  'grove-npc-a': ['My bell rings slightly to the right. I call it an offset. The neighbours call it 6 a.m.', 'The glowing stone by the camp knows how to shift a grid. Chime needs that kind of kindness.'],
-  'grove-npc-b': ['I grew a square tomato. It keeps asking whether it is a fruit or a tile.', 'Most of these stone heights are positive. Try *Zero-Shift* at the little bridge.'],
+  'grove-npc-a': ['My bell rings slightly to the right. I call it an offset. The neighbours call it 6 a.m.', 'The glowing Grid Stone knows how to shift a grid. Chime needs that kind of kindness.'],
+  'grove-npc-b': ['I grew a square tomato. It keeps asking whether it is a fruit or a tile.', 'Our bridge has *two different banks*: 0.9 and 1.8. With only 2 bits, put zero at code 0 and make room on the positive side.'],
   'cove-npc-a': ['My weather forecast is a crab holding a damp biscuit. Surprisingly well calibrated.', 'Brine has calm days and storm days. A tiny range is lovely until a very large wave arrives.'],
-  'cove-npc-b': ['Captain Maybe, at your service. We leave at approximately yes.', 'The bridge pedestal keeps old measurements. Samples help you choose a range; they do not promise tomorrow.'],
+  'cove-npc-b': ['Captain Maybe, at your service. We leave at approximately yes.', 'The forecast says *high tide*. Select the Tide Gauge’s high-tide archive and cover its old peak. The covered stones reveal today’s heights only after you lock.'],
   'heights-npc-a': ['I packed three scarves. One for the wind, one for my dignity, one for emergencies involving soup.', 'Spindle weaves thick and tiny threads. One huge ruler can overlook the little ones.'],
-  'heights-npc-b': ['I am measuring the mountain in teaspoons. My grant application said “small-scale research.”', 'Extra scales cost space. Giving each group its own ruler is a trade, not free magic.'],
+  'heights-npc-b': ['I am measuring the mountain in teaspoons. My grant application said “small-scale research.”', 'Our staircase has big, medium and tiny rows. Give each the matching ruler at *3 bits*. The 10-byte packet includes the extra scales; they are not free magic.'],
   'forge-npc-a': ['This anvil is named Clang. Its brother is also named Clang. Family dinners are difficult.', 'A tiny weight error can matter a lot when a big input multiplies it. Watch the hot channels.'],
-  'forge-npc-b': ['Cinder warmed my lunch, my backpack and a geological era. Very considerate.', 'A bridge wants matching heights. An inference spell wants useful outputs. Different jobs, different good answers.'],
+  'forge-npc-b': ['Cinder warmed my lunch, my backpack and a geological era. Very considerate.', 'The second pressure plate carries *eighteen times* the load. Keep that one exact with Spotlight. The light plates may round; flattening all four is no help.'],
   'archives-npc-a': ['Please whisper. The dictionaries are nesting.', 'Vesper filed an outlier under “too enormous for this shelf.” Try balancing the load first.'],
-  'archives-npc-b': ['I took a shortcut through the index. Do not try the appendix. There are actual appendages.', 'Rescaling before rounding can help. It does not mean the rounded result is magically exact.'],
+  'archives-npc-b': ['I took a shortcut through the index. Do not try the appendix. There are actual appendages.', 'The crossing rounds *both inputs and weights*. Divide the first input by 8 and multiply its weight by 8: the product stays 1 before rounding. Then keep all four products within 20%.'],
   'spire-npc-a': ['At the top of knowledge stands a dragon. At the bottom stands me, looking for my pencil.', 'Auric has several heads to care for. Spend precision where the error matters, not equally out of politeness.'],
-  'spire-npc-b': ['Good news: I reached the summit. Bad news: the summit has more summit.', 'Seven friends, then home. The lighthouse has been saving a very large chair for the Oracle.'],
+  'spire-npc-b': ['Good news: I reached the summit. Bad news: the summit has more summit.', 'The last crossing has just *15 bytes* of packet space. Try 4 bits for the fine row, 3 for the middle, 2 for the coarse. Then seven friends, and home to the lighthouse.'],
 };
 
 export function npcDialogue(npc, state, first = false) {
@@ -76,7 +77,7 @@ export function npcDialogue(npc, state, first = false) {
 export function signText(zone) {
   if (zone < 0) return ['LIGHTHOUSE POINT', 'West: Bitleaf Meadow. Enter talks / examines. Shift runs.', 'Campfires heal. N opens Field Notes. Look for the floating 0 / 1 shards.'];
   const next = zone === 6 ? 'Lighthouse Point, when all seven are friends' : ZONES[zone + 1].name;
-  return [ZONES[zone].name, '*Grid Stone* near the camp → guardian shrine to the north → next gate.', `Next: ${next}. Side trails lead to a cache and a hidden bit shard.`, 'SNAP BRIDGE: four nearby heights, one shared level. Fewer bits can make a better walkway!'];
+  return [ZONES[zone].name, '*Grid Stone* → guardian shrine → next gate. Follow the objective arrow through each region’s own paths.', `Next: ${next}. Side trails lead to a cache and a hidden bit shard.`, `SNAP BRIDGE: ${PUZZLES[zone].goal} ${PUZZLES[zone].hint}`];
 }
 
 export function stoneText(zone) {

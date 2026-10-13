@@ -7,7 +7,7 @@ import { drawCharacter } from '../art/characters.js';
 import { drawSpirit, drawStaticling } from '../art/creatures.js';
 import { PROPS, drawProp } from '../art/props.js';
 import { createAmbience } from '../art/ambience.js';
-import { medianCutPalette, buildPaletteLUT, posterize, bayer, rgbaOf } from '../art/paint.js';
+import { medianCutPalette, buildPaletteLUT, bayer, rgbaOf, u32 } from '../art/paint.js';
 import { PAL } from '../art/palette.js';
 import { drawWorldHud } from '../ui/hud.js';
 import { drawWindow, drawKeyCap } from '../ui/kit.js';
@@ -22,6 +22,32 @@ const stoneItems = PLACEMENTS.filter((item) => item.interaction === 'stone');
 const shrineItems = PLACEMENTS.filter((item) => item.interaction === 'shrine');
 const sortedProps = [...PLACEMENTS].sort((a, b) => a.y - b.y);
 const direction = (x, y) => Math.abs(x) > Math.abs(y) ? x < 0 ? 'left' : 'right' : y < 0 ? 'up' : 'down';
+
+// These circles include the approach, not just the interaction's solid footprint.
+const SAFE_RADII = { shrine: 56, camp: 40, stone: 40, cache: 40, puzzle: 40 };
+const safeItems = INTERACTABLES.filter((item) => SAFE_RADII[item.interaction]);
+const FLEE_GRACE = 6;
+const clearFlag = (enemy) => `patrol-cleared-${enemy.uid}`;
+const landmarkKinds = new Set(Object.keys(PROPS).filter((kind) => PROPS[kind].solid && !kind.startsWith('tree-') && !['bush', 'rock-s', 'rock-l', 'stump'].includes(kind)));
+const colourLight = (word) => (word & 255) * 0.2126 + ((word >>> 8) & 255) * 0.7152 + ((word >>> 16) & 255) * 0.0722;
+const colourDistance = (a, b) => 2 * ((a & 255) - (b & 255)) ** 2 + 4 * (((a >>> 8) & 255) - ((b >>> 8) & 255)) ** 2 + 3 * (((a >>> 16) & 255) - ((b >>> 16) & 255)) ** 2;
+
+export function propVisible(item, cx, cy, width, height) {
+  const d = item.kind === 'npc' ? { w: 24, h: 28, ax: 11, ay: 26 } : PROPS[item.kind];
+  return d && item.x - d.ax < cx + width && item.x - d.ax + d.w > cx && item.y - d.ay < cy + height && item.y - d.ay + d.h > cy;
+}
+
+function rampTransition(a, middle, b) {
+  if (a === b) return false;
+  const ar = a & 255, ag = (a >>> 8) & 255, ab = (a >>> 16) & 255;
+  const br = b & 255, bg = (b >>> 8) & 255, bb = (b >>> 16) & 255;
+  const mr = middle & 255, mg = (middle >>> 8) & 255, mb = (middle >>> 16) & 255;
+  const low = colourLight(a), high = colourLight(b), light = colourLight(middle);
+  return Math.abs(high - low) >= 6 && Math.abs(high - low) <= 48 &&
+    light >= Math.min(low, high) && light <= Math.max(low, high) &&
+    Math.abs(ar - ag - br + bg) < 14 && Math.abs(ab - ag - bb + bg) < 14 &&
+    Math.abs(ar - ag - mr + mg) < 14 && Math.abs(ab - ag - mb + mg) < 14;
+}
 
 const violetTones = PAL.violet.map(rgbaOf);
 // Keep the actual biome hues. A little desaturation and a 20–30% violet shadow
@@ -58,7 +84,7 @@ export class World {
     this.cameraSnap = true;
     this.shrines = shrineItems;
     this.camp = campItems.find((item) => item.id === 'point-camp');
-    this.statics = STATICLINGS.map((item) => ({ ...item, homeX: item.x, homeY: item.y, alive: true, mood: 'wander', clock: item.seed * 0.13, alertTime: 0, dir: 'down' }));
+    this.statics = STATICLINGS.map((item) => ({ ...item, homeX: item.x, homeY: item.y, alive: true, lifecycle: 'DORMANT', mood: 'sleeping', clock: item.seed * 0.13, alertTime: 0, dir: 'down', disengaged: false, purifyUntil: 0 }));
     this.contactCooldown = 2.5;
     this.solved = new Set();
     this.restored = new Set();
@@ -83,6 +109,13 @@ export class World {
     this.lastHeight = 0;
     this.worldLayer = null;
     this.actorLayer = null;
+    this.materialLayer = null;
+    this.heroSilhouettes = new Map();
+    this.heroCover = null;
+    this.rampMask = new Uint8Array(0);
+    this.bridgePaths = new Map();
+    this.bridgeDecks = new Map();
+    for (const enemy of this.statics) this._syncPatrol(enemy);
     this._resetTrail();
   }
 
@@ -108,6 +141,10 @@ export class World {
       }
     }
     this.gateOpen = new Set(GATES.filter((gate) => state.friends.includes(gate.requires)).map((gate) => gate.id));
+    for (const enemy of this.statics) {
+      this._syncPatrol(enemy);
+      enemy.alive = enemy.lifecycle !== 'PURIFIED' && !this.game.hasFlag(clearFlag(enemy));
+    }
     this._syncFollowers();
     this._resetTrail();
     this.cameraSnap = true;
@@ -123,7 +160,7 @@ export class World {
     this.hero.x = entry.x;
     this.hero.y = entry.y;
     this.hero.vx = this.hero.vy = 0;
-    this.hero.facing = 'up';
+    this.hero.facing = entry.facing ?? 'up';
     this.cameraSnap = true;
     this.contactCooldown = 3;
     this._resetTrail();
@@ -174,6 +211,10 @@ export class World {
     this.restored.add(zoneId);
     this.restorations.set(zoneId, colourWave(zoneId, shrine, this.game.time, 2.2));
     this.game.setFlag(`restored-${zoneId}`);
+    for (const enemy of this.statics) if (enemy.zone === zoneId) {
+      this._syncPatrol(enemy);
+      if (!this.game.hasFlag(clearFlag(enemy))) enemy.purifyUntil = this.game.time + 0.8;
+    }
     const gate = GATES.find((item) => item.requires === zoneId);
     if (gate && this.game.state.friends.includes(zoneId)) {
       this.gateTimes.set(gate.id, this.game.time);
@@ -182,13 +223,43 @@ export class World {
     this._syncFollowers();
   }
 
+  _patrolLifecycle(zone) {
+    if (this.restored.has(zone) || this.game.state.friends.includes(zone) || this.game.hasFlag(`restored-${zone}`)) return 'PURIFIED';
+    return this._stoneAwake(zone) ? 'ACTIVE' : 'DORMANT';
+  }
+
+  _resetPatrol(enemy) {
+    enemy.x = enemy.homeX;
+    enemy.y = enemy.homeY;
+    enemy.mood = enemy.lifecycle === 'DORMANT' ? 'sleeping' : enemy.lifecycle === 'PURIFIED' ? 'purified' : 'wander';
+    enemy.alertTime = 0;
+  }
+
+  _syncPatrol(enemy) {
+    const lifecycle = this._patrolLifecycle(enemy.zone);
+    if (lifecycle === enemy.lifecycle) return;
+    const visible = enemy.alive;
+    enemy.lifecycle = lifecycle;
+    enemy.alive = lifecycle !== 'PURIFIED' && !this.game.hasFlag(clearFlag(enemy));
+    if (lifecycle === 'PURIFIED') {
+      enemy.mood = 'purified';
+      if (visible) enemy.purifyUntil = this.game.time + 0.8;
+    } else this._resetPatrol(enemy);
+  }
+
+  _safeAt(x, y, zone) {
+    return safeItems.some((item) => item.zone === zone && (x - item.x) ** 2 + (y - item.y) ** 2 <= SAFE_RADII[item.interaction] ** 2);
+  }
+
   respawnStaticlings() {
     for (const enemy of this.statics) {
+      this._syncPatrol(enemy);
+      if (enemy.lifecycle !== 'ACTIVE') continue;
+      // One reversible flag per patrol keeps repeated rest/Continue saves bounded.
+      this.game.setFlag(clearFlag(enemy), false);
       enemy.alive = true;
-      enemy.x = enemy.homeX;
-      enemy.y = enemy.homeY;
-      enemy.mood = 'wander';
-      enemy.alertTime = 0;
+      enemy.disengaged = false;
+      this._resetPatrol(enemy);
     }
     this.contactCooldown = 3;
   }
@@ -196,14 +267,20 @@ export class World {
   afterBattle(uid, outcome) {
     const enemy = this.statics.find((item) => item.uid === uid);
     if (enemy) {
-      if (outcome === 'won') enemy.alive = false;
-      else {
-        enemy.x = enemy.homeX;
-        enemy.y = enemy.homeY;
-        enemy.mood = 'wander';
+      this._syncPatrol(enemy);
+      if (outcome === 'won') {
+        enemy.alive = false;
+        enemy.mood = 'cleared';
+        this.game.setFlag(clearFlag(enemy));
+      } else {
+        this._resetPatrol(enemy);
+        // A fleeing hero must also leave the notice circle before this patrol
+        // can re-arm; waiting beside its home never causes a contact loop.
+        enemy.disengaged = outcome === 'fled';
       }
     }
-    this.contactCooldown = 3;
+    this.contactCooldown = outcome === 'fled' ? FLEE_GRACE : 3;
+    for (const patrol of this.statics) if (patrol.mood === 'chase' || patrol.mood === 'alert') patrol.mood = 'return';
     this.hero.vx = this.hero.vy = 0;
   }
 
@@ -231,7 +308,6 @@ export class World {
       for (const [tx, ty] of gate.cells) if (right >= tx * TILE && left < (tx + 1) * TILE && bottom >= ty * TILE && top < (ty + 1) * TILE) return false;
     }
     for (const item of PLACEMENTS) {
-      if (Math.abs(item.x - x) > 55 || Math.abs(item.y - y) > 40) continue;
       if (item.interaction === 'shard' || item.kind === 'stone-float') continue;
       const solid = item.kind === 'npc' ? [-5, -5, 10, 7] : PROPS[item.kind]?.solid;
       if (!solid) continue;
@@ -241,9 +317,72 @@ export class World {
     return true;
   }
 
+  _centerOnBridge(body, dx, dy, radius) {
+    let best = null, bestDistance = Infinity;
+    for (const bridge of BRIDGES) {
+      if (!this.solved.has(bridge.id)) continue;
+      for (const segment of this._bridgePath(bridge).segments) {
+        const forward = segment.axis === 'x' ? dx : dy;
+        const sideways = segment.axis === 'x' ? dy : dx;
+        const across = body[segment.cross] - segment.center;
+        if (!forward || Math.abs(sideways) >= Math.abs(forward) || Math.abs(across) > TILE / 2 - 1) continue;
+        const along = body[segment.axis], next = along + forward;
+        if (next < segment.low - 4 || next > segment.high + 4) continue;
+        if (along < segment.low && forward < 0 || along > segment.high && forward > 0) continue;
+        const distance = across ** 2 + (along - clamp(along, segment.low, segment.high)) ** 2;
+        if (distance < bestDistance) { best = segment; bestDistance = distance; }
+      }
+    }
+    if (!best) return;
+    const forward = best.axis === 'x' ? dx : dy;
+    const centered = approach(body[best.cross], best.center, Math.abs(forward) * 0.7);
+    const x = best.cross === 'x' ? centered : body.x, y = best.cross === 'y' ? centered : body.y;
+    // Bend/entry assistance uses ordinary footprint collision. The visible
+    // four-cell path is never widened and a nearby solid prop still wins.
+    if (this._walkable(x, y, radius)) body[best.cross] = centered;
+  }
+
+  _bridgePath(bridge) {
+    let path = this.bridgePaths.get(bridge.id);
+    if (path) return path;
+    const heights = PUZZLES[bridge.zone].settledHeights;
+    const low = Math.min(...heights), span = Math.max(...heights) - low;
+    const lifts = [0, ...heights.map((height) => span < 1e-8 ? 0 : (height - low) / span * 6), 0];
+    const nodes = [bridge.bank, ...bridge.cells, bridge.reward];
+    const segments = [];
+    for (let i = 0; i < nodes.length - 1; i++) {
+      const a = nodes[i], b = nodes[i + 1], axis = a.x === b.x ? 'y' : 'x', cross = axis === 'x' ? 'y' : 'x';
+      // The support ramp starts/ends at the physical bridge edge; banks stay
+      // at height zero. Movement centering also covers the adjacent dry pads.
+      const x = i === 0 ? (a.x + b.x) / 2 : a.x, y = i === 0 ? (a.y + b.y) / 2 : a.y;
+      const endX = i === nodes.length - 2 ? (a.x + b.x) / 2 : b.x;
+      const endY = i === nodes.length - 2 ? (a.y + b.y) / 2 : b.y;
+      segments.push({ axis, cross, center: a[cross], low: Math.min(a[axis], b[axis]), high: Math.max(a[axis], b[axis]), x, y, dx: endX - x, dy: endY - y, from: lifts[i], to: lifts[i + 1] });
+    }
+    path = { segments, cells: new Map(bridge.cells.map((cell) => [`${cell.tx},${cell.ty}`, cell])) };
+    this.bridgePaths.set(bridge.id, path);
+    return path;
+  }
+
+  _pathLift(path, x, y) {
+    let nearest = Infinity, lift = 0;
+    for (const segment of path.segments) {
+      const fraction = clamp(((x - segment.x) * segment.dx + (y - segment.y) * segment.dy) / (segment.dx ** 2 + segment.dy ** 2));
+      const distance = (x - segment.x - segment.dx * fraction) ** 2 + (y - segment.y - segment.dy * fraction) ** 2;
+      if (distance < nearest) { nearest = distance; lift = segment.from + (segment.to - segment.from) * fraction; }
+    }
+    return Math.round(lift);
+  }
+
+  _bridgeLift(x, y) {
+    const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
+    for (const bridge of BRIDGES) if (this.solved.has(bridge.id) && bridge.cells.some((cell) => cell.tx === tx && cell.ty === ty)) return this._pathLift(this._bridgePath(bridge), x, y);
+    return 0;
+  }
   _move(body, dx, dy, radius = 4) {
     const steps = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / 4));
     for (let i = 0; i < steps; i++) {
+      if (body === this.hero) this._centerOnBridge(body, dx / steps, dy / steps, radius);
       if (this._walkable(body.x + dx / steps, body.y, radius)) body.x += dx / steps;
       else if (body === this.hero) body.vx = 0;
       if (this._walkable(body.x, body.y + dy / steps, radius)) body.y += dy / steps;
@@ -286,45 +425,51 @@ export class World {
 
   _updateStaticlings(dt) {
     const zone = this.position.zone;
+    const heroSafe = this._safeAt(this.hero.x, this.hero.y, zone);
     for (const enemy of this.statics) {
-      if (!enemy.alive || Math.abs(enemy.x - this.hero.x) > 360 || Math.abs(enemy.y - this.hero.y) > 320) continue;
+      this._syncPatrol(enemy);
+      if (!enemy.alive || enemy.lifecycle !== 'ACTIVE' || Math.abs(enemy.x - this.hero.x) > 360 || Math.abs(enemy.y - this.hero.y) > 320) continue;
       enemy.clock += dt;
-      const dx = this.hero.x - enemy.x;
-      const dy = this.hero.y - enemy.y;
+      const dx = this.hero.x - enemy.x, dy = this.hero.y - enemy.y;
       const distance = Math.hypot(dx, dy);
       const homeDistance = Math.hypot(enemy.x - enemy.homeX, enemy.y - enemy.homeY);
-      if (enemy.mood === 'wander' && zone === enemy.zone && distance < 80 && this.contactCooldown === 0) {
+      if (enemy.disengaged && (distance >= 96 || zone !== enemy.zone)) enemy.disengaged = false;
+      const protectedApproach = heroSafe || this._safeAt(enemy.x, enemy.y, enemy.zone);
+      const canPursue = !protectedApproach && !enemy.disengaged && this.contactCooldown === 0 && zone === enemy.zone;
+      if (!canPursue && (enemy.mood === 'chase' || enemy.mood === 'alert')) {
+        enemy.mood = 'return';
+        enemy.alertTime = 0;
+      }
+      if (enemy.mood === 'wander' && canPursue && distance < 80) {
         enemy.mood = 'alert';
         enemy.alertTime = 0.45;
         this.game.audio.play('scan');
       }
-      let vx = 0;
-      let vy = 0;
+      let vx = 0, vy = 0;
       if (enemy.mood === 'alert') {
         enemy.alertTime -= dt;
         if (enemy.alertTime <= 0) enemy.mood = 'chase';
       } else if (enemy.mood === 'chase') {
-        if (distance > 140 || homeDistance > 165 || zone !== enemy.zone) enemy.mood = 'return';
+        if (distance > 140 || homeDistance > 165) enemy.mood = 'return';
         else if (distance > 1) { vx = dx / distance * 51; vy = dy / distance * 51; }
       } else if (enemy.mood === 'return') {
-        if (homeDistance < 8) enemy.mood = 'wander';
+        if (homeDistance < 4) this._resetPatrol(enemy);
         else { vx = (enemy.homeX - enemy.x) / homeDistance * 31; vy = (enemy.homeY - enemy.y) / homeDistance * 31; }
-      } else {
+      } else if (!enemy.disengaged) {
         const tick = Math.floor(enemy.clock / 2.8);
         const angle = hash2(enemy.seed, tick, 317) * Math.PI * 2;
-        const active = enemy.clock % 2.8 < 1.5;
-        if (active) {
+        if (enemy.clock % 2.8 < 1.5) {
           vx = homeDistance > 28 ? (enemy.homeX - enemy.x) / homeDistance * 15 : Math.cos(angle) * 15;
           vy = homeDistance > 28 ? (enemy.homeY - enemy.y) / homeDistance * 15 : Math.sin(angle) * 15;
         }
       }
       if (vx || vy) {
         enemy.dir = direction(vx, vy);
-        const nx = enemy.x + vx * dt;
-        const ny = enemy.y + vy * dt;
-        if (MAP.zoneAt(Math.floor(nx / TILE), Math.floor(ny / TILE)) === enemy.zone) this._move(enemy, vx * dt, vy * dt, 3);
+        const nx = enemy.x + vx * dt, ny = enemy.y + vy * dt;
+        if (enemy.mood === 'chase' && this._safeAt(nx, ny, enemy.zone)) enemy.mood = 'return';
+        else if (MAP.zoneAt(Math.floor(nx / TILE), Math.floor(ny / TILE)) === enemy.zone) this._move(enemy, vx * dt, vy * dt, 3);
       }
-      if (distance < 13 && this.contactCooldown === 0 && (enemy.mood === 'chase' || enemy.mood === 'alert')) {
+      if (distance < 13 && canPursue && (enemy.mood === 'chase' || enemy.mood === 'alert')) {
         this.contactCooldown = 3;
         this.hero.vx = this.hero.vy = 0;
         this.game.startBattle({ foeId: `static-${enemy.zone}`, guardian: false, uid: enemy.uid, zone: enemy.zone });
@@ -377,22 +522,25 @@ export class World {
     } else if (item.interaction === 'shrine') {
       if (game.state.friends.includes(item.zone)) game.say({ speaker: GUARDIANS[item.zone].name, portrait: GUARDIANS[item.zone].key, text: 'A little more colour. A little less lonely. Thanks for finding me.' });
       else if (item.zone > 0 && !game.state.friends.includes(item.zone - 1)) game.say('The Static seal is still strong. Help the earlier guardians first.');
-      else if (!this._stoneAwake(item.zone)) game.say('The shrine is sealed. Wake the glowing Grid Stone beside this zone’s camp first.');
+      else if (!this._stoneAwake(item.zone)) game.say('The shrine is sealed. Wake this zone’s glowing Grid Stone first.');
       else game.say(shrineDialogue(item.zone), { onDone: () => game.startBattle({ foeId: GUARDIANS[item.zone].key, guardian: true, uid: item.id, zone: item.zone }) });
     } else if (item.interaction === 'lighthouse') {
       if (game.hasFlag('ending-seen')) game.say({ speaker: 'The Oracle', portrait: 'oracle', text: 'A smaller satchel. A larger circle of friends. Thank you for bringing me home.' });
       else if (game.state.friends.length === 7) game.playEnding();
       else game.say({ speaker: 'The Lighthouse', portrait: 'oracle', text: 'A warm light, an enormous empty chair. Bring all seven spirit friends home.' });
     } else if (item.interaction === 'puzzle') {
-      if (this.solved.has(item.id)) game.say('Four heights, one shared level. Your bridge remembers. The shard is on the far bank.');
+      if (this.solved.has(item.id)) game.say('Four stones, a steady crossing. Your bridge remembers. The shard is on the far bank.');
       else {
         this.puzzle = new SnapBridge(game, PUZZLES[item.zone], {
           onSolve: () => {
             this.solved.add(item.id);
             for (const cell of BRIDGES[item.zone].cells) this.chunks.delete(`${Math.floor(cell.tx / CHUNK)},${Math.floor(cell.ty / CHUNK)}`);
-            game.toast('SNAP! A flat walkway. Cross to the bit shard.', { kind: 'reward', ms: 3000 });
           },
-          onClose: () => { this.puzzle = null; this.contactCooldown = 2; },
+          onClose: () => {
+            this.puzzle = null;
+            this.contactCooldown = 2;
+            if (this.solved.has(item.id)) game.toast('SNAP! The crossing is steady. Reach the bit shard.', { kind: 'reward', ms: 3000 });
+          },
         });
       }
     }
@@ -427,6 +575,7 @@ export class World {
         this.pendingStone = null;
         this.game.setFlag(`stone-${zone}`);
         this.game.unlockTechnique(ZONES[zone].technique);
+        for (const enemy of this.statics) if (enemy.zone === zone) this._syncPatrol(enemy);
       }
       return;
     }
@@ -508,98 +657,270 @@ export class World {
     return undefined;
   }
 
+  _heroSilhouette() {
+    const dir = this.hero.facing;
+    let canvas = this.heroSilhouettes.get(dir);
+    if (canvas) return canvas;
+    const surface = makeCanvas(32, 36);
+    drawCharacter(surface.ctx, 'hero', 16, 30, { dir, frame: -1, t: 1 });
+    const image = surface.ctx.getImageData(0, 0, 32, 36);
+    const source = new Uint32Array(image.data.buffer);
+    const alpha = Uint8Array.from(source, (word, i) => i < 30 * 32 && word >>> 24 > 127 ? 1 : 0);
+    for (let i = 0; i < source.length; i++) {
+      if (!alpha[i]) { source[i] = 0; continue; }
+      const edge = !alpha[i - 1] || !alpha[i + 1] || !alpha[i - 32] || !alpha[i + 32];
+      source[i] = u32(edge ? PAL.cream[2] : PAL.teal[2]);
+    }
+    surface.ctx.putImageData(image, 0, 0);
+    canvas = surface.canvas;
+    this.heroSilhouettes.set(dir, canvas);
+    return canvas;
+  }
+
+  _drawSolvedBridge(ctx, bridge, cx, cy) {
+    let deck = this.bridgeDecks.get(bridge.id);
+    if (!deck) {
+      const path = this._bridgePath(bridge);
+      const left = Math.min(...bridge.cells.map((cell) => cell.tx)) * TILE;
+      const top = Math.min(...bridge.cells.map((cell) => cell.ty)) * TILE;
+      const right = (Math.max(...bridge.cells.map((cell) => cell.tx)) + 1) * TILE;
+      const bottom = (Math.max(...bridge.cells.map((cell) => cell.ty)) + 1) * TILE;
+      const surface = makeCanvas(right - left, bottom - top + 6);
+      // Rasterize the four connected treads once, including corner profiles.
+      // Hero/friend feet use this exact height field, not a separate flat lane.
+      for (let y = top; y < bottom; y++) for (let x = left; x < right; x++) {
+        const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
+        if (!path.cells.has(`${tx},${ty}`)) continue;
+        const lift = this._pathLift(path, x, y);
+        const edge = x % TILE === 0 && !path.cells.has(`${tx - 1},${ty}`) || x % TILE === TILE - 1 && !path.cells.has(`${tx + 1},${ty}`) || y % TILE === 0 && !path.cells.has(`${tx},${ty - 1}`) || y % TILE === TILE - 1 && !path.cells.has(`${tx},${ty + 1}`);
+        surface.ctx.fillStyle = PAL.stone[2];
+        surface.ctx.fillRect(x - left, y - top + 6 - lift, 1, lift + 1);
+        surface.ctx.fillStyle = edge ? PAL.teal[5] : x % TILE === 0 || y % TILE === 0 ? PAL.stone[3] : PAL.stone[5];
+        surface.ctx.fillRect(x - left, y - top + 6 - lift, 1, 1);
+      }
+      deck = { canvas: surface.canvas, x: left, y: top - 6 };
+      this.bridgeDecks.set(bridge.id, deck);
+    }
+    ctx.drawImage(deck.canvas, deck.x - cx, deck.y - cy);
+  }
+
   _drawEntities(ctx, actors, cx, cy, width, height, t) {
     const list = this.renderList;
     list.length = 0;
     for (const item of sortedProps) {
-      if (item.x < cx - 60 || item.x > cx + width + 60 || item.y < cy - 10 || item.y > cy + height + 100) continue;
+      if (!propVisible(item, cx, cy, width, height)) continue;
       if (item.interaction === 'shard' && this.game.state.shards.includes(item.id)) continue;
+      if (PROPS[item.kind]?.ground) {
+        drawProp(ctx, item.kind, Math.round(item.x - cx), Math.round(item.y - cy), { t, biome: item.biome, variant: item.variant ?? item.zone + 1, reduced: this.game.reducedMotion });
+        continue;
+      }
       list.push({ type: 'prop', y: item.y, item });
-      if (item.interaction === 'shrine' && !this.game.state.friends.includes(item.zone)) list.push({ type: 'guardian', y: item.y + 13, item });
+      if (item.interaction === 'shrine' && !this.restored.has(item.zone)) list.push({ type: 'guardian', y: item.y + 13, item });
     }
     for (const bridge of BRIDGES) {
+      if (this.solved.has(bridge.id)) {
+        if (bridge.cells.some((cell) => cell.x > cx - TILE && cell.x < cx + width + TILE && cell.y > cy - TILE && cell.y < cy + height + TILE)) this._drawSolvedBridge(ctx, bridge, cx, cy);
+        continue;
+      }
       const puzzle = this.puzzle?.puzzle.id === bridge.id ? this.puzzle : null;
-      const solved = this.solved.has(bridge.id);
-      const heights = puzzle && ['snap', 'result'].includes(puzzle.phase) ? puzzle.result.recon : PUZZLES[bridge.zone].values;
+      const heights = puzzle && ['snap', 'result'].includes(puzzle.phase) ? puzzle.result.recon : PUZZLES[bridge.zone].idleHeights ?? PUZZLES[bridge.zone].values;
       for (let i = 0; i < bridge.cells.length; i++) {
         const cell = bridge.cells[i];
         if (cell.x < cx - 20 || cell.x > cx + width + 20 || cell.y < cy - 20 || cell.y > cy + height + 30) continue;
-        const shift = solved ? 0 : Math.round(heights[i] / PUZZLES[bridge.zone].amax * 10);
-        list.push({ type: 'float', y: cell.y, item: { ...cell, shift, solved, biome: ZONES[bridge.zone].biome } });
+        const shift = Math.round(heights[i] / PUZZLES[bridge.zone].amax * 10);
+        list.push({ type: 'float', y: cell.y, item: { ...cell, shift, biome: ZONES[bridge.zone].biome } });
       }
     }
     for (const gate of GATES) {
       const opening = this.gateTimes.get(gate.id);
       const open = this.game.state.friends.includes(gate.requires);
       if (open && (opening === undefined || t - opening > 1.1)) continue;
-      if (Math.abs(gate.x - this.hero.x) > width || Math.abs(gate.y - this.hero.y) > height) continue;
+      if (!propVisible(gate, cx, cy, width, height)) continue;
       list.push({ type: 'gate', y: gate.y, item: gate, opening: open });
     }
-    for (const enemy of this.statics) if (enemy.alive && enemy.x > cx - 20 && enemy.x < cx + width + 20 && enemy.y > cy - 10 && enemy.y < cy + height + 25) list.push({ type: 'static', y: enemy.y, item: enemy });
+    for (const enemy of this.statics) if ((enemy.alive || enemy.purifyUntil > t) && enemy.x > cx - 20 && enemy.x < cx + width + 20 && enemy.y > cy - 10 && enemy.y < cy + height + 25) list.push({ type: 'static', y: enemy.y, item: enemy });
     for (const friend of this.followers) list.push({ type: 'friend', y: friend.y, item: friend });
     list.push({ type: 'hero', y: this.hero.y, item: this.hero });
     list.sort((a, b) => a.y - b.y);
-    // The environment is quantized as one layer. A foreground prop erases its
-    // silhouette from the actor layer, preserving Y-order without tinting people.
+    const heroX = Math.round(this.hero.x - cx), heroY = Math.round(this.hero.y - cy) - this._bridgeLift(this.hero.x, this.hero.y);
+    let heroDrawn = false;
+    // Foreground props erase actors in normal Y-order. Only the hero gets a
+    // cached, motion-stable silhouette, clipped to the actual overhang pixels.
     const prop = (kind, x, y, options) => {
       const opts = { ...options, reduced: this.game.reducedMotion };
       drawProp(ctx, kind, x, y, opts);
+      if (this.materialLayer) {
+        const material = this.materialLayer.ctx;
+        material.globalCompositeOperation = landmarkKinds.has(kind) ? 'source-over' : 'destination-out';
+        drawProp(material, kind, x, y, opts);
+        material.globalCompositeOperation = 'source-over';
+      }
       actors.globalCompositeOperation = 'destination-out';
       drawProp(actors, kind, x, y, opts);
       actors.globalCompositeOperation = 'source-over';
+      if (!heroDrawn || !propVisible({ kind, x, y }, heroX - 16, heroY - 30, 32, 36)) return;
+      this.heroCover ??= makeCanvas(32, 36);
+      const cover = this.heroCover.ctx;
+      cover.clearRect(0, 0, 32, 36);
+      drawProp(cover, kind, x - heroX + 16, y - heroY + 30, opts);
+      cover.globalCompositeOperation = 'source-in';
+      cover.drawImage(this._heroSilhouette(), 0, 0);
+      cover.globalCompositeOperation = 'source-over';
+      actors.drawImage(this.heroCover.canvas, heroX - 16, heroY - 30);
     };
     for (const entry of list) {
       const item = entry.item;
-      const x = Math.round(item.x - cx);
-      const y = Math.round(item.y - cy);
+      const x = Math.round(item.x - cx), y = Math.round(item.y - cy);
       if (entry.type === 'prop') {
         if (item.kind === 'npc') drawCharacter(actors, item.character, x, y, { dir: this.nearby?.id === item.id ? direction(this.hero.x - item.x, this.hero.y - item.y) : 'down', frame: -1, t });
         else prop(item.kind, x, y, { t, variant: item.variant ?? item.zone + 1, biome: item.biome, state: this._propState(item) });
       } else if (entry.type === 'guardian') drawSpirit(actors, GUARDIANS[item.zone].key, x, y + 13, { t, dir: 'down', moving: false, corrupted: true });
-      else if (entry.type === 'float') prop('stone-float', x, y - item.shift, { t: item.solved ? 0 : t, biome: item.biome, state: item.solved ? 'solved' : 'floating' });
+      else if (entry.type === 'float') prop('stone-float', x, y - item.shift, { t, biome: item.biome, state: 'floating' });
       else if (entry.type === 'gate') prop('gate', x, y, { t: entry.opening ? t - this.gateTimes.get(item.id) : t, state: entry.opening ? 'opening' : 'closed', biome: item.biome, variant: item.orientation === 'vertical' ? 1 : 0, progress: entry.opening ? clamp((t - this.gateTimes.get(item.id)) / 1.1) : 0 });
-      else if (entry.type === 'static') drawStaticling(actors, item.zone, x, y, { t, dir: item.dir, alert: item.mood === 'alert' || item.mood === 'chase' });
-      else if (entry.type === 'friend') drawSpirit(actors, GUARDIANS[item.zone].key, x, y, { t, dir: item.dir, moving: item.moving, corrupted: false });
-      else drawCharacter(actors, 'hero', x, y, { dir: this.hero.facing, frame: this.hero.moving ? Math.floor(this.hero.step) % 4 : -1, t });
+      else if (entry.type === 'static') {
+        if (item.lifecycle === 'PURIFIED') {
+          const age = 0.8 - (item.purifyUntil - t);
+          actors.fillStyle = PAL.gold[6];
+          for (let i = 0; i < (this.game.reducedMotion ? 2 : 4); i++) {
+            const sx = x + Math.round(Math.cos(i * Math.PI / 2) * (3 + age * 9));
+            const sy = y - 8 + Math.round(Math.sin(i * Math.PI / 2) * (3 + age * 7) - age * 6);
+            actors.fillRect(sx - 1, sy, 3, 1);
+            actors.fillRect(sx, sy - 1, 1, 3);
+          }
+        } else {
+          const sleeping = item.lifecycle === 'DORMANT';
+          drawStaticling(actors, item.zone, x, y, { t: sleeping ? 0 : t, dir: item.dir, alert: !sleeping && (item.mood === 'alert' || item.mood === 'chase') });
+          if (sleeping) drawText(actors, 'z', x + 6, y - 22, { font: 'small', color: PAL.cream[1], shadow: PAL.shadow });
+        }
+      } else if (entry.type === 'friend') drawSpirit(actors, GUARDIANS[item.zone].key, x, y - this._bridgeLift(item.x, item.y), { t, dir: item.dir, moving: item.moving, corrupted: false });
+      else {
+        drawCharacter(actors, 'hero', heroX, heroY, { dir: this.hero.facing, frame: this.hero.moving ? Math.floor(this.hero.step) % 4 : -1, t });
+        heroDrawn = true;
+      }
     }
+  }
+
+  _paletteSample(zone) {
+    let samples = this.paletteSamples.get(zone);
+    if (samples) return samples;
+    const region = REGIONS.find((item) => item.id === zone);
+    const surface = makeCanvas(region.w * TILE, region.h * TILE);
+    paintTerrainChunk(surface.ctx, this.map, region.x, region.y, region.w, region.h, 0, 0);
+    const image = surface.ctx.getImageData(0, 0, surface.canvas.width, surface.canvas.height);
+    const words = new Uint32Array(image.data.buffer);
+    const ground = [], material = [], warm = [], glow = [];
+    const grade = (word) => staticGrade(word & 255, (word >>> 8) & 255, (word >>> 16) & 255);
+    const stride = Math.max(1, Math.floor(words.length / 2048));
+    for (let i = 0; i < words.length; i += stride) {
+      const tx = region.x + Math.floor((i % image.width) / TILE), ty = region.y + Math.floor(i / image.width / TILE);
+      if (MAP.zoneAt(tx, ty) === zone && isWalkable(this.map.get(tx, ty))) ground.push(grade(words[i]));
+    }
+    // Sample each material at its own scale. A tiny campfire gets the same
+    // fitting budget as a wall; neither can be drowned out by the floor area.
+    const kinds = new Set();
+    for (const item of sortedProps) {
+      if (item.zone !== zone || item.kind === 'npc' || kinds.has(item.kind)) continue;
+      kinds.add(item.kind);
+      const d = PROPS[item.kind], prop = makeCanvas(d.w, d.h);
+      drawProp(prop.ctx, item.kind, d.ax, d.ay, { t: 0, biome: item.biome, variant: item.variant ?? zone + 1, state: item.interaction === 'shrine' ? 'open' : 'awake', reduced: true });
+      const data = prop.ctx.getImageData(0, 0, d.w, d.h);
+      const pixels = new Uint32Array(data.data.buffer);
+      const opaque = [];
+      for (const word of pixels) if (word >>> 24 > 127) opaque.push(grade(word));
+      const step = Math.max(1, Math.floor(opaque.length / 256));
+      for (let i = 0; i < opaque.length; i += step) {
+        const word = opaque[i];
+        material.push(word);
+        if (['campfire', 'lamp', 'lantern', 'furnace', 'forge-stack'].includes(item.kind)) warm.push(word);
+        if (item.interaction === 'stone' || item.interaction === 'shrine') glow.push(word);
+      }
+    }
+    samples = { ground, material, warm, glow };
+    this.paletteSamples.set(zone, samples);
+    return samples;
   }
 
   _palette(zone, bits = this._colourBits(zone)) {
     const key = `${zone}:${bits}`;
     let palette = this.palettes.get(key);
     if (palette) return palette;
-    let image = this.paletteSamples.get(zone);
-    if (!image) {
-      const region = REGIONS.find((item) => item.id === zone);
-      const surface = makeCanvas(region.w * TILE, region.h * TILE);
-      paintTerrainChunk(surface.ctx, this.map, region.x, region.y, region.w, region.h, 0, 0);
-      for (const item of sortedProps) if (item.zone === zone && item.kind !== 'npc') {
-        drawProp(surface.ctx, item.kind, item.x - region.x * TILE, item.y - region.y * TILE, { t: 0, biome: item.biome, variant: item.variant ?? zone + 1, state: 'awake', reduced: true });
+    const samples = this._paletteSample(zone);
+    const asImage = (words) => ({ data: new Uint8ClampedArray(Uint32Array.from(words).buffer), width: words.length, height: 1 });
+    const graded = (colour) => staticGrade(...rgbaOf(colour).slice(0, 3));
+    const nearest = (words, target) => words.reduce((best, word) => colourDistance(word, target) < colourDistance(best, target) ? word : best);
+    const ground = u32(medianCutPalette(asImage(samples.ground), 1)[0]);
+    const highlight = nearest(samples.glow, graded(zone === 6 ? PAL.teal[7] : PAL.stone[6]));
+    const warmth = nearest(samples.warm, graded(PAL.gold[6]));
+    // All depths retain four semantic roles: outline, biome floor, cool/lit
+    // structure, warm fire. Extra bits refine the same balanced clean sample.
+    const colours = [...new Set([
+      nearest(samples.material, graded(PAL.stone[0])),
+      ground,
+      highlight,
+      warmth,
+    ])];
+    const balanced = [...samples.ground, ...samples.material];
+    const count = 2 ** bits;
+    const candidates = [...new Set(medianCutPalette(asImage(balanced), count * 2).map(u32))];
+    if (new Set([...colours, ...candidates]).size < count) candidates.push(...new Set(balanced));
+    while (colours.length < count) {
+      let best = 0, distance = -1;
+      for (const candidate of candidates) {
+        const separation = Math.min(...colours.map((colour) => colourDistance(candidate, colour)));
+        if (separation > distance) { best = candidate; distance = separation; }
       }
-      image = surface.ctx.getImageData(0, 0, surface.canvas.width, surface.canvas.height);
-      const words = new Uint32Array(image.data.buffer);
-      for (let y = 0; y < image.height; y++) for (let x = 0; x < image.width; x++) {
-        const index = y * image.width + x;
-        if (MAP.zoneAt(region.x + (x >> 4), region.y + (y >> 4)) !== zone) words[index] = 0;
-        else {
-          const word = words[index];
-          words[index] = staticGrade(word & 255, (word >>> 8) & 255, (word >>> 16) & 255);
-        }
-      }
-      this.paletteSamples.set(zone, image);
+      colours.push(best);
     }
-    // Re-fit the same clean biome sample when its Grid Stone adds one colour bit.
-    const fitted = buildPaletteLUT(medianCutPalette(image, 2 ** bits));
-    // Fold the grade into the lookup once: no per-frame RGB conversion pass.
+    const fitted = buildPaletteLUT(colours);
+    // Fold the mild violet grade into the lookup once; actors never enter it.
     const lut = new Uint8Array(32768);
+    const materialLut = bits === 2 ? new Uint8Array(32768) : lut;
     for (let r = 0; r < 32; r++) for (let g = 0; g < 32; g++) for (let b = 0; b < 32; b++) {
-      const colour = staticGrade(r * 8 + 4, g * 8 + 4, b * 8 + 4);
-      const key = (((colour & 255) >> 3) << 10) | ((((colour >>> 8) & 255) >> 3) << 5) | (((colour >>> 16) & 255) >> 3);
-      lut[(r << 10) | (g << 5) | b] = fitted.lut[key];
+      const R = r * 8 + 4, G = g * 8 + 4, B = b * 8 + 4;
+      const colour = staticGrade(R, G, B);
+      const index = (((colour & 255) >> 3) << 10) | ((((colour >>> 8) & 255) >> 3) << 5) | (((colour >>> 16) & 255) >> 3);
+      const source = (r << 10) | (g << 5) | b;
+      lut[source] = fitted.lut[index];
+      materialLut[source] = lut[source];
+      if (bits === 2) {
+        // Identical stone/wood can occur in both paving and walls. A real prop
+        // alpha mask selects material roles without adding a fifth colour.
+        const light = R * 0.2126 + G * 0.7152 + B * 0.0722;
+        const warm = light >= 65 && R > G * 1.4 && R > B * 1.2 || light > 145 && R > B + 20 && G > B + 12;
+        if (warm) materialLut[source] = colours.indexOf(warmth);
+        else if (light >= 65 && Math.max(R, G, B) - Math.min(R, G, B) < 72) materialLut[source] = colours.indexOf(highlight);
+      }
     }
-    palette = { ...fitted, lut };
+    palette = { ...fitted, lut, materialLut };
     this.palettes.set(key, palette);
     return palette;
+  }
+
+  _rampTransitions(image) {
+    const { width, height } = image;
+    const words = new Uint32Array(image.data.buffer, image.data.byteOffset, width * height);
+    if (this.rampMask.length < words.length) this.rampMask = new Uint8Array(words.length);
+    this.rampMask.fill(0, 0, words.length);
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+      const i = y * width + x;
+      if (x > 0 && x < width - 1 && rampTransition(words[i - 1], words[i], words[i + 1]) || y > 0 && y < height - 1 && rampTransition(words[i - width], words[i], words[i + width])) this.rampMask[i] = 1;
+    }
+    return this.rampMask;
+  }
+
+  _posterize(image, palette, transitions, ox, oy, mask, materials = null) {
+    const { width, height } = image;
+    const words = new Uint32Array(image.data.buffer, image.data.byteOffset, width * height);
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+      const i = y * width + x, word = words[i];
+      if (word >>> 24 === 0 || !mask(x, y)) continue;
+      const offset = transitions[i] ? (bayer(x + ox, y + oy) - 0.5) * 8 : 0;
+      const r = clamp((word & 255) + offset, 0, 255) >> 3;
+      const g = clamp(((word >>> 8) & 255) + offset, 0, 255) >> 3;
+      const b = clamp(((word >>> 16) & 255) + offset, 0, 255) >> 3;
+      const lut = materials && materials[i] >>> 24 > 127 ? palette.materialLut : palette.lut;
+      words[i] = (palette.words[lut[(r << 10) | (g << 5) | b]] & 0xffffff) | (word & 0xff000000);
+    }
   }
 
   _corrupt(ctx, cx, cy, width, height, t) {
@@ -644,8 +965,11 @@ export class World {
         const outside = (wx - ripple.x) ** 2 + (wy - ripple.y) ** 2 > r * r;
         return outside === outsideRipple;
       };
-      posterize(image, this._palette(zone, bits), { dither: bits <= 2 ? 18 : 12, ox, oy, mask: (x, y) => needsColour(x, y) });
-      if (ripple) posterize(image, this._palette(zone, ZONES[zone].corruptBits), { dither: 12, ox, oy, mask: (x, y) => needsColour(x, y, true) });
+      const transitions = this._rampTransitions(image);
+      const materialImage = bits === 2 || ripple && ZONES[zone].corruptBits === 2 ? this.materialLayer.ctx.getImageData(bounds.x, bounds.y, image.width, image.height) : null;
+      const materials = materialImage && new Uint32Array(materialImage.data.buffer, materialImage.data.byteOffset, image.width * image.height);
+      this._posterize(image, this._palette(zone, bits), transitions, ox, oy, (x, y) => needsColour(x, y), materials);
+      if (ripple) this._posterize(image, this._palette(zone, ZONES[zone].corruptBits), transitions, ox, oy, (x, y) => needsColour(x, y, true), materials);
       ctx.putImageData(image, bounds.x, bounds.y);
     }
   }
@@ -657,6 +981,7 @@ export class World {
       this.lastHeight = screen.h;
       this.worldLayer = makeCanvas(screen.w, screen.h);
       this.actorLayer = makeCanvas(screen.w, screen.h);
+      this.materialLayer = makeCanvas(screen.w, screen.h);
     }
     if (this.cameraSnap) this._updateCamera(0, screen);
     const cx = Math.round(this.camera.x);
@@ -664,6 +989,7 @@ export class World {
     const environment = this.worldLayer.ctx;
     const actors = this.actorLayer.ctx;
     actors.clearRect(0, 0, screen.w, screen.h);
+    this.materialLayer.ctx.clearRect(0, 0, screen.w, screen.h);
     this._drawTerrain(environment, cx, cy, screen.w, screen.h, t);
     for (const dust of this.dust) {
       environment.fillStyle = PAL.sand[4];
@@ -687,7 +1013,7 @@ export class World {
       const top = item.kind === 'npc' ? 24 : PROPS[item.kind]?.h ?? 16;
       const y = clamp(Math.round(Math.min(item.y - top - 13, this.hero.y - 43) - cy), 30, screen.h - 42);
       drawWindow(ctx, x, y, width, 15, 'glass', t);
-      drawKeyCap(ctx, 'E', x + 3, y + 3);
+      drawKeyCap(ctx, this.game.input?.lastDevice === 'touch' ? 'A' : 'E', x + 3, y + 3);
       drawText(ctx, label, x + 18, y + 4, { color: PAL.ui.text });
     }
     const stats = heroStats(this.game.state);
@@ -704,7 +1030,7 @@ export class World {
   }
 
   describe() {
-    if (this.puzzle) return `Snap Bridge ${this.puzzle.puzzle.id}. ${this.puzzle.phase}. ${this.puzzle.bits} bits. ${this.puzzle.result.solved ? 'One shared level' : 'Heights differ'}.`;
+    if (this.puzzle) return this.puzzle.describe();
     if (this.pendingStone) return `Grid Stone awakening. ${ZONES[this.pendingStone.zone].corruptBits} to ${this._colourBits(this.pendingStone.zone)} colour bits.`;
     const chasers = this.statics.filter((enemy) => enemy.alive && enemy.mood === 'chase').length;
     return `${this.nearby ? interactionName(this.nearby, this.game.state) + '. ' : ''}${chasers ? `${chasers} Staticling chasing. ` : ''}${this.objective()?.text ?? 'Explore the island'}.`;
