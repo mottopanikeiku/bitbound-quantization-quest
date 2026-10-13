@@ -5,6 +5,7 @@ import { GUARDIANS, TECHNIQUE_ORDER, TECHNIQUES, ZONES, heroStats } from '../src
 import { kvCacheBytes } from '../src/quantization.js';
 import { Battle } from '../src/battle/battle.js';
 import { newGame } from '../src/state.js';
+import { LessonCard } from '../src/ui/lesson.js';
 
 const lessonFields = ['id', 'title', 'technique', 'icon', 'lines', 'formula', 'real', 'recap', 'diagramCaption'];
 const coachKeys = ['intro', 'firstSnap', 'fizzle', 'clipped', 'perfect', 'clippedPerfect', 'technique', 'lowBytes', 'guard', 'charge', 'win'];
@@ -388,5 +389,27 @@ test('technical sources have primary HTTPS links and cover the required methods'
     'float4.html', '2402.02750', 'quantized_kvcache', 'kv_cache_interface', 'slaa323a',
   ]) {
     assert.ok(urls.includes(identifier), `source coverage includes ${identifier}`);
+  }
+});
+
+test('lesson cards never end a page on a heading whose text is on the next page', () => {
+  const screens = [
+    { w: 384, h: 216, portrait: false },
+    { w: 216, h: 320, portrait: true },
+    { w: 417, h: 417, portrait: false },
+    { w: 258, h: 485, portrait: true },
+  ];
+  for (const screen of screens) {
+    for (const id of Object.keys(LESSONS)) {
+      for (const mode of ['learn', 'recap']) {
+        const card = new LessonCard({ announce() {}, screen });
+        card.open({ id, mode });
+        card.layout(screen);
+        card.pages.forEach((page, index) => {
+          const last = page.filter((row) => row.text).at(-1);
+          assert.ok(!last?.small, `${screen.w}×${screen.h} ${id} ${mode}: page ${index + 1} ends on the heading "${last?.text}"`);
+        });
+      }
+    }
   }
 });

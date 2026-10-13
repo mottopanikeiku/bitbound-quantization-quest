@@ -16,23 +16,31 @@ export class LessonCard {
   layout(screen) {
     const key = `${screen.w}:${screen.h}`;
     if (key === this.layoutKey) return this.geom;
-    const x = screen.portrait ? 7 : 13, y = screen.portrait ? 13 : 9, w = screen.w - x * 2, h = screen.h - y * 2;
+    // Edge to edge on the smallest canvases; larger ones get a centred card so the diagram and text stay together.
+    const w = Math.min(screen.w - (screen.portrait ? 14 : 26), screen.portrait ? 400 : 480);
+    const h = Math.min(screen.h - (screen.portrait ? 26 : 18), screen.portrait ? 440 : 300);
+    const x = Math.floor((screen.w - w) / 2), y = Math.floor((screen.h - h) / 2);
     const split = !screen.portrait, diagramW = split ? 147 : w - 22, diagramH = split ? 103 : 92;
     const tx = split ? x + 171 : x + 12, ty = split ? y + 43 : y + 158;
     const tw = split ? w - 184 : w - 24, capacity = Math.max(5, Math.floor((y + h - 30 - ty) / 11));
     const sections = this.mode === 'recap'
       ? [{ text: this.lesson.recap, color: PAL.ui.text }, { text: this.lesson.formula, color: PAL.teal[7] }, { text: 'IN REAL MODELS', small: true, color: PAL.ui.gold }, { text: this.lesson.real, color: PAL.ui.dim }]
       : [...this.lesson.lines.map(text => ({ text, color: PAL.ui.text })), { text: this.lesson.formula, color: PAL.teal[7] }, { text: 'IN REAL MODELS', small: true, color: PAL.ui.gold }, { text: this.lesson.real, color: PAL.ui.dim }];
+    const blank = { text: '', color: PAL.ui.text };
+    const blocks = sections.map(section => wrapText(section.text, tw, section.small ? 'small' : 'body').map(text => ({ ...section, text })));
     const pages = []; let rows = [];
-    for (const section of sections) {
-      const wrapped = wrapText(section.text, tw, section.small ? 'small' : 'body').map(text => ({ ...section, text }));
-      if (rows.length && rows.length + wrapped.length + 1 > capacity) { pages.push(rows); rows = []; }
-      if (rows.length) rows.push({ text: '', color: PAL.ui.text });
+    blocks.forEach((wrapped, i) => {
+      const heading = sections[i].small && blocks[i + 1];
+      const afterHeading = i > 0 && sections[i - 1].small;
+      // A heading travels with the text it introduces; other sections move whole when a fresh page can hold them.
+      const need = heading ? Math.min(capacity, wrapped.length + 1 + blocks[i + 1].length) : wrapped.length;
+      if (rows.length && !afterHeading && rows.length + 1 + need > capacity) { pages.push(rows); rows = []; }
+      if (rows.length) rows.push(blank);
       for (const row of wrapped) {
         if (rows.length >= capacity) { pages.push(rows); rows = []; }
         rows.push(row);
       }
-    }
+    });
     if (rows.length) pages.push(rows);
     this.pages = pages; this.page = Math.min(this.page, pages.length - 1); this.layoutKey = key;
     this.geom = { x, y, w, h, diagramW, diagramH, tx, ty, tw, split }; return this.geom;
