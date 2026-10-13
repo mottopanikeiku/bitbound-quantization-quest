@@ -20,18 +20,18 @@ export class WorldScene {
   enter(params = {}) {
     this.world.setState(this.game.state);
     this.zone = null;
-    this._syncZone();
+    // Returning from a battle restores zone music without repeating the banner.
+    this._syncZone(!params.fromBattle);
     if (params.afterEnding) this.game.toast('All seven friends are home. Explore freely!', { kind: 'reward', ms: 4000 });
   }
 
-  _syncZone() {
+  _syncZone(banner = true) {
     const zone = this.world.position.zone;
     if (zone === this.zone) return;
-    const first = this.zone === null;
     this.zone = zone;
     const info = ZONES[zone];
     this.game.setMusicScene(info ? info.key : 'overworld');
-    if (!first) this.game.toast(info ? info.name : HUB.name, { kind: 'zone', ms: 2400 });
+    if (banner) this.game.toast(info ? info.name : HUB.name, { kind: 'zone', ms: 2400 });
   }
 
   update(dt, input) {
