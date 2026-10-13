@@ -6,6 +6,7 @@ import { PORTRAIT_IDS } from '../art/portraits.js';
 import { PUZZLES } from './puzzles.js';
 
 export const INTRO_HINT = 'WASD / arrows walk. Shift runs. Enter talks. Esc pauses. N opens Field Notes.';
+export const TOUCH_HINT = 'The D-pad walks. Hold STEADY to run. A talks, B backs out, START pauses.';
 const SEEDS = {
   hub: ['Eight bits make one byte.', 'A 16-bit number takes two bytes; a 4-bit code takes half a byte.'],
   meadow: ['b bits give 2^b codes. Four bits give 16 codes.', 'Nearest-level rounding is off by at most half a step, unless the value clips.'],
@@ -54,13 +55,13 @@ const JOKES = {
   'spire-npc-b': ['Good news: I reached the summit. Bad news: the summit has more summit.', 'The last crossing has just *15 bytes* of packet space. Try 4 bits for the fine row, 3 for the middle, 2 for the coarse. Then seven friends, and home to the lighthouse.'],
 };
 
-export function npcDialogue(npc, state, first = false) {
+export function npcDialogue(npc, state, first = false, touch = false) {
   const friends = state.friends.length;
   if (npc.id === 'point-keeper') {
     if (friends === 7) return [voice(npc, 'Seven colours. Seven friends. And you, with considerably more pockets than when you left.'), voice(npc, 'Bring them into the lighthouse. The Oracle is ready to come home.')];
     if (first) return [
       voice(npc, 'Welcome to Lighthouse Point, cartographer. The Static has stolen our island’s in-between colours.'),
-      voice(npc, INTRO_HINT),
+      voice(npc, touch ? TOUCH_HINT : INTRO_HINT),
       voice(npc, 'Take the west path to Bitleaf Meadow. Wake its *Grid Stone*, then help Nib at the shrine.'),
       voice(npc, 'Campfires refill you. Little Staticlings chase, but running helps. We befriend the big spirits; nobody gets squashed.'),
     ];
@@ -74,8 +75,8 @@ export function npcDialogue(npc, state, first = false) {
   return [voice(npc, jokes[0]), voice(npc, fact(npc.zone, npc.id.endsWith('-b') ? 1 : 0)), voice(npc, restored ? `${GUARDIANS[npc.zone].name} is back, and so are the colours. ${npc.zone === 5 ? 'The books are showing off their jackets.' : 'Even the shadows look relieved.'}` : jokes[1])];
 }
 
-export function signText(zone) {
-  if (zone < 0) return ['LIGHTHOUSE POINT', 'West: Bitleaf Meadow. Enter talks / examines. Shift runs.', 'Campfires heal. N opens Field Notes. Look for the floating 0 / 1 shards.'];
+export function signText(zone, touch = false) {
+  if (zone < 0) return ['LIGHTHOUSE POINT', touch ? 'West: Bitleaf Meadow. A talks / examines. Hold STEADY to run.' : 'West: Bitleaf Meadow. Enter talks / examines. Shift runs.', touch ? 'Campfires heal. START opens Field Notes from the pause menu. Look for the floating 0 / 1 shards.' : 'Campfires heal. N opens Field Notes. Look for the floating 0 / 1 shards.'];
   const next = zone === 6 ? 'Lighthouse Point, when all seven are friends' : ZONES[zone + 1].name;
   return [ZONES[zone].name, '*Grid Stone* → guardian shrine → next gate. Follow the objective arrow through each region’s own paths.', `Next: ${next}. Side trails lead to a cache and a hidden bit shard.`, `SNAP BRIDGE: ${PUZZLES[zone].goal} ${PUZZLES[zone].hint}`];
 }

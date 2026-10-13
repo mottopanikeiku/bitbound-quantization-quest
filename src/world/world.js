@@ -510,14 +510,14 @@ export class World {
       }
       const first = !game.hasFlag(`talk-${item.id}`);
       game.setFlag(`talk-${item.id}`);
-      game.say(npcDialogue(item, game.state, first));
+      game.say(npcDialogue(item, game.state, first, game.input?.lastDevice === 'touch'));
       game.save();
-    } else if (item.interaction === 'sign') game.say(signText(item.zone));
+    } else if (item.interaction === 'sign') game.say(signText(item.zone, game.input?.lastDevice === 'touch'));
     else if (item.interaction === 'camp') game.restAtCamp(item.id);
     else if (item.interaction === 'cache') game.openCache(item.id);
     else if (item.interaction === 'shard') game.collectShard(item.id);
     else if (item.interaction === 'stone') {
-      if (this._stoneAwake(item.zone)) game.say([stoneText(item.zone), 'The stone is awake. Its guardian shrine is unsealed. N opens your Field Notes.']);
+      if (this._stoneAwake(item.zone)) game.say([stoneText(item.zone), `The stone is awake. Its guardian shrine is unsealed. ${game.input?.lastDevice === 'touch' ? 'START → Field Notes' : 'N opens your Field Notes'} to review the technique.`]);
       else game.say([stoneText(item.zone)], { onDone: () => this.awakenStone(item.zone) });
     } else if (item.interaction === 'shrine') {
       if (game.state.friends.includes(item.zone)) game.say({ speaker: GUARDIANS[item.zone].name, portrait: GUARDIANS[item.zone].key, text: 'A little more colour. A little less lonely. Thanks for finding me.' });

@@ -12,6 +12,7 @@ export class BattleScene {
   enter(params) {
     this.params = params;
     this.reported = false;
+    this.victoryCued = false;
     this.battle = new Battle({ game: this.game, ...params });
   }
 
@@ -22,6 +23,10 @@ export class BattleScene {
   update(dt, input) {
     if (!this.battle) return;
     this.battle.update(dt, input);
+    if (!this.victoryCued && this.battle.result?.outcome === 'won') {
+      this.victoryCued = true;
+      this.game.setMusicScene('victory');
+    }
     if (this.battle.finished && !this.reported) {
       this.reported = true;
       this.game.endBattle(this.battle.result, this.params);
