@@ -1,6 +1,6 @@
 {
   "name": "bitbound-quantization-quest",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "type": "module",
   "description": "An original pixel-art RPG where quantization is the magic: snap values onto visible grids and befriend seven spirits.",

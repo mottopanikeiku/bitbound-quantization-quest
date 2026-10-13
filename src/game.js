@@ -50,8 +50,13 @@ export class Game {
     this.scene.enter();
     this._readout = document.querySelector('#readout');
     this._lastAnnounce = '';
+    this._sceneMark = '';
+    this._fullscreenRequested = false;
+    this._fullscreenRetry = null;
+    this._markScene();
     this._wireButtons();
     this._syncMusicButton();
+    this._syncFullscreenButton();
   }
 
   // ── Audio, music and page controls ────────────────────────────────────────
@@ -77,9 +82,57 @@ export class Game {
     this.save();
   }
 
+  // ── Full screen ──────────────────────────────────────────────────────────
+
+  get fullscreenSupported() {
+    return Boolean(document.fullscreenEnabled && document.documentElement.requestFullscreen);
+  }
+
+  isFullscreen() {
+    return Boolean(document.fullscreenElement);
+  }
+
+  /** F, the title button and the pause menu: switch now and remember the choice. */
   toggleFullscreen() {
-    if (document.fullscreenElement) document.exitFullscreen?.();
-    else document.documentElement.requestFullscreen?.().catch(() => this.toast('Full screen is unavailable here.'));
+    if (!this.fullscreenSupported) {
+      this.toast('Full screen is unavailable in this browser.', { kind: 'notice' });
+      return;
+    }
+    const on = !this.isFullscreen();
+    this.state.fullscreen = on;
+    this.save();
+    this.setFullscreen(on, { explicit: true });
+  }
+
+  /** Starting play re-enters full screen silently; only explicit requests report failures. */
+  setFullscreen(on, { retry = true, explicit = false } = {}) {
+    if (!this.fullscreenSupported || on === this.isFullscreen()) return;
+    this._fullscreenRequested = true;
+    if (!on) {
+      document.exitFullscreen().catch(() => (this._fullscreenRequested = false));
+      return;
+    }
+    document.documentElement.requestFullscreen({ navigationUI: 'hide' }).catch(() => {
+      this._fullscreenRequested = false;
+      // A touch press reaches the game before the browser counts it as a gesture (that happens
+      // on release), so try once more on the next release or key press.
+      if (retry) this._fullscreenRetry = explicit ? 'explicit' : 'auto';
+      else if (explicit) this.toast('Full screen is unavailable here.', { kind: 'notice' });
+    });
+  }
+
+  _fullscreenChanged() {
+    const on = this.isFullscreen();
+    const external = !this._fullscreenRequested;
+    this._fullscreenRequested = false;
+    // Keep Esc as the pause key where the browser allows it (hold Esc to leave full screen).
+    if (on) navigator.keyboard?.lock?.(['Escape']).catch(() => {});
+    else navigator.keyboard?.unlock?.();
+    // Pressing Esc in full screen usually means "pause" even when the browser exits instead.
+    const inWorld = this.scene === this.worldScene && this.worldScene.world.canPause !== false;
+    const inBattle = this.scene === this.battleScene && this.battleScene.canPause;
+    if (!on && external && !this.transition && !this._overlay() && (inWorld || inBattle)) this.openPause();
+    this._syncFullscreenButton();
   }
 
   _wireButtons() {
@@ -90,10 +143,23 @@ export class Game {
       this.toggleMusic();
       refocus();
     });
-    document.querySelector('#fullscreen-toggle')?.addEventListener('click', () => {
-      this.toggleFullscreen();
-      refocus();
-    });
+    const fullscreenButton = document.querySelector('#fullscreen-toggle');
+    if (fullscreenButton) {
+      fullscreenButton.hidden = !this.fullscreenSupported;
+      fullscreenButton.addEventListener('click', () => {
+        this.toggleFullscreen();
+        refocus();
+      });
+    }
+    document.addEventListener('fullscreenchange', () => this._fullscreenChanged());
+    const retry = () => {
+      if (!this._fullscreenRetry) return;
+      const explicit = this._fullscreenRetry === 'explicit';
+      this._fullscreenRetry = null;
+      if (this.state.fullscreen) this.setFullscreen(true, { retry: false, explicit });
+    };
+    addEventListener('pointerup', retry, true);
+    addEventListener('keydown', retry, true);
     const touch = document.querySelector('#touch');
     if (touch) this.input.bindTouch(touch);
     this.screen.canvas.addEventListener('pointerdown', refocus);
@@ -105,6 +171,28 @@ export class Game {
     button.setAttribute('aria-pressed', String(this.state.music));
     const label = button.querySelector('[data-label]');
     if (label) label.textContent = this.state.music ? 'Music on' : 'Music off';
+  }
+
+  _syncFullscreenButton() {
+    const button = document.querySelector('#fullscreen-toggle');
+    if (!button) return;
+    const on = this.isFullscreen();
+    button.setAttribute('aria-pressed', String(on));
+    const label = button.querySelector('[data-label]');
+    if (label) label.textContent = on ? 'Exit full screen' : 'Full screen';
+  }
+
+  /** Page chrome (title buttons) is shown only on the title; play is canvas only. */
+  _markScene() {
+    const name = this.sceneName();
+    if (name === this._sceneMark) return;
+    this._sceneMark = name;
+    document.documentElement.dataset.scene = name;
+  }
+
+  sceneName() {
+    const names = new Map([[this.battleScene, 'battle'], [this.worldScene, 'world'], [this.titleScene, 'title'], [this.introScene, 'intro'], [this.endingScene, 'ending']]);
+    return names.get(this.scene) ?? 'gallery';
   }
 
   /** Screen-reader status (polite live region). */
@@ -146,18 +234,19 @@ export class Game {
   }
 
   newGame() {
-    const music = this.state.music;
+    const { music, fullscreen } = this.state;
     this.state = freshState();
-    this.state.music = music;
-    this.state.started = true;
+    Object.assign(this.state, { music, fullscreen, started: true });
     this.worldScene.reset();
     this.startAudio();
+    if (fullscreen) this.setFullscreen(true);
     this.save();
     this.cut(() => this._setScene(this.introScene));
   }
 
   continueGame() {
     this.startAudio();
+    if (this.state.fullscreen) this.setFullscreen(true);
     this.cut(() => this._setScene(this.worldScene));
   }
 
@@ -167,9 +256,9 @@ export class Game {
 
   /** Wipe the save and return to the title (pause → Restart adventure). */
   restart() {
-    const music = this.state.music;
+    const { music, fullscreen } = this.state;
     this.state = freshState();
-    this.state.music = music;
+    Object.assign(this.state, { music, fullscreen });
     this.pendingRecap = null;
     this.save();
     this.worldScene.reset();
@@ -342,6 +431,7 @@ export class Game {
       onResume: () => this.audio.play('menu-back'),
       onNotes: () => this.openNotes(),
       onToggleMusic: () => this.toggleMusic(),
+      ...(this.fullscreenSupported ? { fullscreenOn: () => this.isFullscreen(), onToggleFullscreen: () => this.toggleFullscreen() } : {}),
       onRestart: () => this.restart(),
     });
   }
@@ -406,6 +496,7 @@ export class Game {
       }
     }
     this.toasts.update(dt);
+    this._markScene();
     this._labelClock = (this._labelClock ?? 0) + dt;
     if (this._labelClock >= 0.2) {
       this._labelClock = 0;
@@ -453,8 +544,7 @@ export class Game {
   describe() {
     const s = this.state;
     const stats = this.stats();
-    const names = new Map([[this.battleScene, 'battle'], [this.worldScene, 'world'], [this.titleScene, 'title'], [this.introScene, 'intro'], [this.endingScene, 'ending']]);
-    const scene = names.get(this.scene) ?? 'gallery';
+    const scene = this.sceneName();
     const overlay = this._overlay();
     const parts = [`Scene ${scene}`, `HP ${s.hero.hp}/${stats.maxHp}`, `Bytes ${s.hero.bytes}/${stats.maxBytes}`, `Friends ${s.friends.length}/7`];
     if (overlay) {

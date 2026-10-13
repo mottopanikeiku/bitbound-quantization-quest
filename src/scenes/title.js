@@ -127,7 +127,8 @@ export class TitleScene {
     const mw = 129, my = portrait ? h - 94 : h - 71, mh = this.items().length === 1 ? 33 : 48;
     drawWindow(ctx, cx - Math.round(mw / 2), my, mw, mh, 'glass');
     drawMenu(ctx, cx - 49, my + 11, this.game.state.started ? ['Continue', 'New Game'] : ['New Game'], this.confirming ? 1 : this.selected, { colWidth: 105, rowHeight: 16, t: this.game.reducedMotion ? 0 : t });
-    drawText(ctx, this.game.input.lastDevice === 'touch' ? 'A begins the adventure · B goes back' : 'Enter begins with music · M mutes', cx, h - 12, { font: 'small', align: 'center', color: PAL.cream[1], shadow: PAL.ink });
+    const keys = w >= 240 ? 'Enter begins with music · M mutes · F full screen' : 'Enter begins · M music · F full screen';
+    drawText(ctx, this.game.input.lastDevice === 'touch' ? 'A begins the adventure · B goes back' : keys, cx, h - 12, { font: 'small', align: 'center', color: PAL.cream[1], shadow: PAL.ink });
     if (this.confirming) {
       drawScrim(ctx, screen); const width = Math.min(w - 28, 232), x = Math.round((w - width) / 2), y = Math.round((h - 118) / 2);
       drawWindow(ctx, x, y, width, 118, 'danger'); drawText(ctx, 'Begin a new adventure?', x + 13, y + 12, { color: PAL.ui.bad });

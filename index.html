@@ -1,24 +1,27 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-scene="title">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0d0a19" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="description" content="A small world. A little less precision. An original pixel RPG about quantization, friendship, and keeping what matters." />
   <title>Bitbound — The Static Isle</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
 </head>
 <body>
   <div class="shell">
-    <header class="topbar">
-      <a class="wordmark" href="./" aria-label="Bitbound — The Static Isle home"><span class="mark" aria-hidden="true"></span><span>BITBOUND<small>The Static Isle</small></span></a>
-      <div class="actions">
-        <button id="music-toggle" type="button" aria-pressed="true" aria-label="Toggle music"><span class="sound-mark" aria-hidden="true">♫</span><span data-label>Music on</span><kbd>M</kbd></button>
-        <button id="fullscreen-toggle" type="button" aria-label="Toggle full screen"><span aria-hidden="true">⛶</span><span class="fullscreen-label">Full screen</span><kbd>F</kbd></button>
-      </div>
-    </header>
     <main id="stage" class="stage" aria-label="The Static Isle">
       <canvas id="game" width="384" height="216" tabindex="0" role="application" aria-label="Bitbound. Press Enter to begin with music." aria-describedby="controls-legend">An original keyboard-controlled adventure. JavaScript and canvas support are required.</canvas>
+      <div class="title-chrome">
+        <a class="source-link" href="https://github.com/mottopanikeiku/bitbound-quantization-quest" target="_blank" rel="noopener noreferrer">Research &amp; source <span aria-hidden="true">↗</span></a>
+        <div class="actions">
+          <button id="music-toggle" type="button" aria-pressed="true" aria-label="Toggle music"><span class="sound-mark" aria-hidden="true">♫</span><span data-label>Music on</span><kbd>M</kbd></button>
+          <button id="fullscreen-toggle" type="button" aria-pressed="false" aria-label="Toggle full screen"><span aria-hidden="true">⛶</span><span class="fullscreen-label" data-label>Full screen</span><kbd>F</kbd></button>
+        </div>
+      </div>
     </main>
     <nav id="touch" class="touch" aria-label="Touch controls">
       <div class="dpad" aria-label="Movement">
@@ -37,10 +40,7 @@
         <button class="act-button" type="button" data-action="confirm" aria-label="Confirm or interact"><b>A</b><small>Act</small></button>
       </div>
     </nav>
-    <footer class="footer">
-      <p id="controls-legend" class="controls"><span><kbd>WASD</kbd> / <kbd>↑↓←→</kbd> move</span><span><kbd>Shift</kbd> run</span><span><kbd>Enter</kbd> / <kbd>Space</kbd> act</span><span><kbd>Esc</kbd> pause</span><span><kbd>N</kbd> notes</span></p>
-      <a href="https://github.com/mottopanikeiku/bitbound-quantization-quest" target="_blank" rel="noopener noreferrer">Research &amp; source <span aria-hidden="true">↗</span></a>
-    </footer>
+    <p id="controls-legend" class="sr-only">WASD or arrow keys move. Shift runs. Enter or Space acts. Escape or P pauses. N opens Field Notes. M toggles music. F toggles full screen.</p>
     <p id="readout" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
   </div>
   <noscript>Bitbound runs entirely in your browser. Enable JavaScript to play.</noscript>

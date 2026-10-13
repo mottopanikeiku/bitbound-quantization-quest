@@ -7,33 +7,42 @@ export class PauseMenu {
   get active() { return this.open_; }
   open(handlers = {}) {
     this.handlers = handlers; this.open_ = true; this.selected = 0; this.confirming = false; this.age = 0;
-    this.game.announce('Paused. Resume, Field Notes, Music, or Restart adventure.');
+    this.game.announce(`Paused. ${this.entries().map(entry => entry.key === 'music' || entry.key === 'fullscreen' ? entry.label.replace(/ (on|off)$/, '') : entry.label).join(', ')}.`);
   }
   close() { this.open_ = false; }
-  items() { return this.confirming ? ['Keep exploring', 'Erase & restart'] : ['Resume', 'Field Notes', `Music ${this.handlers.musicOn?.() ? 'on' : 'off'}`, 'Restart adventure']; }
+  /** Named entries so optional items (full screen) never shift what a choice does. */
+  entries() {
+    if (this.confirming) return [{ key: 'keep', label: 'Keep exploring' }, { key: 'erase', label: 'Erase & restart' }];
+    const entries = [{ key: 'resume', label: 'Resume' }, { key: 'notes', label: 'Field Notes' }, { key: 'music', label: `Music ${this.handlers.musicOn?.() ? 'on' : 'off'}` }];
+    if (this.handlers.fullscreenOn) entries.push({ key: 'fullscreen', label: `Full screen ${this.handlers.fullscreenOn() ? 'on' : 'off'}` });
+    entries.push({ key: 'restart', label: 'Restart adventure' });
+    return entries;
+  }
+  items() { return this.entries().map(entry => entry.label); }
+  _select(key) { this.selected = Math.max(0, this.entries().findIndex(entry => entry.key === key)); }
   update(dt, input) {
     if (!this.open_) return; this.age += dt;
-    const count = this.items().length;
+    const count = this.entries().length;
     if (input.repeat('up')) { this.selected = (this.selected + count - 1) % count; this.game.audio.play('menu-move'); }
     if (input.repeat('down')) { this.selected = (this.selected + 1) % count; this.game.audio.play('menu-move'); }
     if (input.pressed('cancel') || input.pressed('pause')) {
       input.consume('cancel'); input.consume('pause');
-      if (this.confirming) { this.confirming = false; this.selected = 3; this.game.audio.play('menu-back'); }
+      if (this.confirming) { this.confirming = false; this._select('restart'); this.game.audio.play('menu-back'); }
       else { this.close(); this.handlers.onResume?.(); } return;
     }
     if (!input.pressed('confirm')) return; input.consume('confirm'); this.game.audio.play('select');
-    if (this.confirming) {
-      if (this.selected === 1) { this.close(); this.handlers.onRestart?.(); }
-      else { this.confirming = false; this.selected = 3; } return;
-    }
-    if (this.selected === 0) { this.close(); this.handlers.onResume?.(); }
-    else if (this.selected === 1) this.handlers.onNotes?.();
-    else if (this.selected === 2) this.handlers.onToggleMusic?.();
-    else { this.confirming = true; this.selected = 0; this.game.announce('Erase all adventure progress? Keep exploring is selected.'); }
+    const key = this.entries()[this.selected]?.key;
+    if (key === 'erase') { this.close(); this.handlers.onRestart?.(); }
+    else if (key === 'keep') { this.confirming = false; this._select('restart'); }
+    else if (key === 'resume') { this.close(); this.handlers.onResume?.(); }
+    else if (key === 'notes') this.handlers.onNotes?.();
+    else if (key === 'music') this.handlers.onToggleMusic?.();
+    else if (key === 'fullscreen') this.handlers.onToggleFullscreen?.();
+    else if (key === 'restart') { this.confirming = true; this.selected = 0; this.game.announce('Erase all adventure progress? Keep exploring is selected.'); }
   }
   draw(ctx, screen, t) {
     if (!this.open_) return;
-    const w = Math.min(206, screen.w - 28), h = this.confirming ? 142 : 149;
+    const w = Math.min(206, screen.w - 28), h = this.confirming ? 142 : 73 + 19 * this.entries().length;
     const x = Math.round((screen.w - w) / 2), y = Math.round((screen.h - h) / 2) + panelLift(this.age, this.game.reducedMotion);
     drawScrim(ctx, screen); drawWindow(ctx, x, y, w, h, this.confirming ? 'danger' : 'default');
     drawIcon(ctx, this.confirming ? 'cross' : 'star', x + 14, y + 15);
@@ -46,6 +55,7 @@ export class PauseMenu {
       drawText(ctx, 'The isle can wait for you.', x + 14, y + 29, { font: 'small', color: PAL.ui.dim });
       drawMenu(ctx, x + 14, y + 48, this.items(), this.selected, { colWidth: w - 27, rowHeight: 19, t: this.game.reducedMotion ? 0 : t });
     }
-    drawText(ctx, '↑↓ Choose   Enter Select   Esc Back', x + Math.round(w / 2), y + h - 15, { font: 'small', color: PAL.ui.faint, align: 'center' });
+    const footer = this.game.input?.lastDevice === 'touch' ? '↑↓ Choose   A Select   B Back' : '↑↓ Choose   Enter Select   Esc Back';
+    drawText(ctx, footer, x + Math.round(w / 2), y + h - 15, { font: 'small', color: PAL.ui.faint, align: 'center' });
   }
 }

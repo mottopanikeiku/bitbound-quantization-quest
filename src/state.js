@@ -12,6 +12,8 @@ export function newGame() {
     version: 3,
     started: false,
     music: true,
+    // Full screen is entered when play starts; turning it off (F or pause menu) is remembered.
+    fullscreen: true,
     position: null,
     facing: 'down',
     camp: START_CAMP,
@@ -45,6 +47,7 @@ export function sanitize(saved) {
   if (!saved || typeof saved !== 'object' || saved.version !== 3) return state;
   state.started = saved.started === true;
   state.music = saved.music !== false;
+  state.fullscreen = saved.fullscreen !== false;
   for (let i = 0; i < 7 && saved.friends?.[i] === i; i++) state.friends.push(i);
   state.techniques = TECHNIQUE_ORDER.filter((id) => idList(saved.techniques).includes(id));
   state.lessons = idList(saved.lessons, 32);
