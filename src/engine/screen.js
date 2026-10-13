@@ -24,7 +24,17 @@ export class Screen {
     this._observer = new ResizeObserver(() => this.resize());
     this._observer.observe(stage);
     addEventListener('orientationchange', () => this.resize());
+    this._watchPixelRatio();
     this.resize();
+  }
+
+  /** Moving between monitors or zooming can change devicePixelRatio without resizing the stage. */
+  _watchPixelRatio() {
+    const query = matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    query.addEventListener?.('change', () => {
+      this.resize();
+      this._watchPixelRatio();
+    }, { once: true });
   }
 
   onResize(listener) {

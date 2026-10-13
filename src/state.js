@@ -51,7 +51,7 @@ export function sanitize(saved) {
   state.shards = idList(saved.shards, 32);
   state.caches = idList(saved.caches, 32);
   state.puzzles = idList(saved.puzzles, 16);
-  state.flags = idList(saved.flags, 128);
+  state.flags = idList(saved.flags, 256);
   state.camp = typeof saved.camp === 'string' && saved.camp.length <= 48 ? saved.camp : START_CAMP;
   if (['down', 'up', 'left', 'right'].includes(saved.facing)) state.facing = saved.facing;
   if (Number.isFinite(saved.position?.x) && Number.isFinite(saved.position?.y)) {

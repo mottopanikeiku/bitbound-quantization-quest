@@ -207,6 +207,7 @@ export class Game {
     state.stats.perfects += result.stats?.perfects ?? 0;
     state.stats.fizzles += result.stats?.fizzles ?? 0;
     state.gear = { ...state.gear, ...result.gear };
+    if (result.guardTaught) this.setFlag('guard-taught');
     const world = this.worldScene.world;
     const guardian = GUARDIANS.find((g) => g.key === result.foeId);
     let after = null;
@@ -323,8 +324,11 @@ export class Game {
     this.save();
   }
 
-  setFlag(id) {
-    if (!this.state.flags.includes(id)) this.state.flags.push(id);
+  /** Set (default) or clear a progression flag. */
+  setFlag(id, value = true) {
+    const at = this.state.flags.indexOf(id);
+    if (value && at < 0) this.state.flags.push(id);
+    else if (!value && at >= 0) this.state.flags.splice(at, 1);
   }
 
   hasFlag(id) {
