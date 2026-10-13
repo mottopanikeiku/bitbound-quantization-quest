@@ -457,7 +457,10 @@ export class Game {
     const scene = names.get(this.scene) ?? 'gallery';
     const overlay = this._overlay();
     const parts = [`Scene ${scene}`, `HP ${s.hero.hp}/${stats.maxHp}`, `Bytes ${s.hero.bytes}/${stats.maxBytes}`, `Friends ${s.friends.length}/7`];
-    if (overlay) parts.push(`Overlay ${overlay.constructor.name}`);
+    if (overlay) {
+      const overlayName = overlay === this.lessonCard ? 'Lesson card' : overlay === this.dialogue ? 'Dialogue' : overlay === this.codex ? 'Field Notes' : 'Pause menu';
+      parts.push(`Overlay ${overlayName}`);
+    }
     if (scene === 'world') {
       const world = this.worldScene.world;
       const p = world.position;
