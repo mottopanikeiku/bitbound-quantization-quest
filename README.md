@@ -2,6 +2,11 @@
 
 **[Play in your browser →](https://mottopanikeiku.github.io/bitbound-quantization-quest/)**
 
+<p>
+<a href="https://mottopanikeiku.github.io/bitbound-quantization-quest/"><img alt="Title screen: the Bitbound logo over a lighthouse island at dusk" src="docs/title.webp" width="49%"></a>
+<a href="https://mottopanikeiku.github.io/bitbound-quantization-quest/"><img alt="Lighthouse Point, the first village, with the opening quest in the corner" src="docs/island.webp" width="49%"></a>
+</p>
+
 An original pixel-art RPG where **quantization is the magic**. The Static has squeezed a colourful island into a handful of bits. Explore it with the Gridstaff, snap scattered values onto grids of levels, befriend seven corrupted guardian spirits and give the island its colour back.
 
 Every spell is real (toy-sized) quantization arithmetic: the values you see are rounded to the levels you see, and the damage you deal comes from the error you see.
