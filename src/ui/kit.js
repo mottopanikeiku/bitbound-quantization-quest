@@ -92,12 +92,27 @@ const ICONS = {
   check: ['00000000','00000010','00000110','10001100','11011000','01110000','00100000','00000000'],
   cross: ['00000000','11000110','01101100','00111000','00111000','01101100','11000110','00000000'],
   key: ['00111000','01000100','01000100','00111000','00010000','00011000','00010000','00011000'],
+  'medal-gold': ['11000110','01101100','00111000','01111100','11010110','11011110','01111100','00111000'],
+  'medal-silver': ['11000110','01101100','00111000','01111100','11011110','11101110','01111100','00111000'],
+  'medal-bronze': ['11000110','01101100','00111000','01111100','11110110','11001110','01111100','00111000'],
+  hat: ['00000000','00111000','01111100','01111100','01000100','11111111','01111110','00000000'],
+  map: ['11011011','10110101','10110101','10100101','10101101','10110101','11011011','00000000'],
+  dex: ['01111110','11000010','11011010','11011010','11000010','11011010','01111110','00000000'],
+  well: ['00111100','01000010','10111101','10000001','11111111','01011010','01000010','01111110'],
+  resonance: ['00010000','00111000','01010100','10010010','01010100','00111000','00010000','00000000'],
+  assist: ['01000100','11101110','01000100','00010000','00111000','01111100','00111000','00010000'],
+  pin: ['00111000','01111100','01010100','01111100','00111000','00010000','00010000','00000000'],
+  golden: ['00010010','00010100','00111000','11111110','01111100','00111000','01010100','10010000'],
+  badge: ['00111100','01111110','11011011','11111111','11011011','01111110','00111100','01000010'],
 };
 const COLORS = {
   heart: PAL.rose[4], byte: PAL.water[6], snack: PAL.gold[5], shard: PAL.teal[6], friend: PAL.grass[5],
   star: PAL.gold[5], bolt: PAL.gold[5], shield: PAL.sky[4], scan: PAL.teal[5], run: PAL.ui.dim,
   bits: PAL.grass[5], zero: PAL.teal[5], calib: PAL.water[6], groups: PAL.violet[5], spotlight: PAL.gold[5],
   balance: PAL.violet[6], budget: PAL.gold[6], check: PAL.teal[6], cross: PAL.rose[4], key: PAL.gold[5],
+  'medal-gold': PAL.gold[5], 'medal-silver': PAL.sky[5], 'medal-bronze': PAL.wood[5],
+  hat: PAL.rose[4], map: PAL.grass[5], dex: PAL.teal[5], well: PAL.violet[5],
+  resonance: PAL.teal[6], assist: PAL.rose[5], pin: PAL.rose[4], golden: PAL.gold[5], badge: PAL.gold[5],
 };
 export function drawIcon(ctx, name, x, y) {
   if (!ICONS[name]) return;
@@ -106,6 +121,72 @@ export function drawIcon(ctx, name, x, y) {
     ICONS[name].forEach((row, iy) => { for (let ix = 0; ix < row.length; ix++) if (row[ix] === '1') p.set(ix, iy, iy < 3 && ix < 4 ? PAL.cream[3] : tone); });
   });
   ctx.drawImage(sprite, Math.round(x), Math.round(y));
+}
+
+// Each stamp carries its own little story, not a numbered generic achievement.
+const BADGE_ART = {
+  'first-friend': ['friend', PAL.grass],
+  'seven-friends': ['circle', PAL.grass],
+  'first-perfect': ['bell', PAL.gold],
+  'three-casts': ['notes', PAL.teal],
+  'guard-triad': ['triad', PAL.sky],
+  recovery: ['sprout', PAL.grass],
+  'bit-fit': ['bits', PAL.grass],
+  'zero-fit': ['zero', PAL.teal],
+  'tide-fit': ['calib', PAL.water],
+  'group-fit': ['groups', PAL.violet],
+  'spotlight-fit': ['spotlight', PAL.gold],
+  'balance-fit': ['balance', PAL.violet],
+  'budget-fit': ['crown', PAL.gold],
+  'seven-bridges': ['bridge', PAL.wood],
+  'sixteen-shards': ['shards', PAL.teal],
+  'eight-camps': ['hearth', PAL.rose],
+  'dex-complete': ['dex', PAL.teal],
+  'fen-three': ['atlas', PAL.sky],
+  'well-five': ['well', PAL.violet],
+  'well-fifteen': ['lantern', PAL.gold],
+};
+const STAMP_GLYPHS = {
+  circle: ['00111000','01000100','10010010','10111010','10010010','01000100','00111000','00000000'],
+  bell: ['00010000','00111000','01111100','01010100','01010100','11111110','00010000','00000000'],
+  notes: ['11011011','01001001','01001001','11011011','00000000','00111100','01100110','00000000'],
+  triad: ['11011011','11011011','01001001','00000000','01111110','00111100','00011000','00000000'],
+  sprout: ['00000011','11000110','01101100','00111000','00010000','00010000','00111000','01111100'],
+  crown: ['10010010','11010110','11111110','01111100','01010100','01111100','00000000','00000000'],
+  bridge: ['11000011','11111111','10100101','10100101','11111111','11000011','11000011','00000000'],
+  shards: ['00100100','01101110','11111111','01101110','00100100','00011000','00111100','00011000'],
+  hearth: ['00010000','01011000','01111100','00111100','00011000','11111111','01000010','00000000'],
+  atlas: ['11011011','10110101','10110101','11111111','01010100','00111000','00010000','00000000'],
+  lantern: ['00111000','01000100','01111100','01010100','01111100','01010100','01111100','00010000'],
+};
+export const BADGE_IDS = Object.freeze(Object.keys(BADGE_ART));
+export const V3_ICON_IDS = Object.freeze(['medal-gold', 'medal-silver', 'medal-bronze', 'hat', 'map', 'dex', 'well', 'resonance', 'assist', 'pin', 'golden', 'badge']);
+export function drawBadge(ctx, id, x, y, { earned = false, size = 24 } = {}) {
+  const art = BADGE_ART[id];
+  if (!art) return;
+  size = Math.max(16, Math.min(96, Math.round(size)));
+  const image = spriteCache(`ui-badge:${id}:${earned}:${size}`, size, size, p => {
+    const base = new Pix(16, 16), ramp = art[1];
+    const edge = earned ? ramp[2] : PAL.night[5], light = earned ? ramp[6] : PAL.ui.borderDim;
+    // Scalloped seal with two ribbon tails and a top-left metal bevel.
+    base.rect(4, 0, 8, 14, edge).rect(2, 2, 12, 10, edge).rect(1, 4, 14, 6, edge);
+    if (earned) base.rect(4, 2, 8, 10, ramp[3]).rect(3, 3, 10, 8, ramp[3]);
+    else { base.clear(4, 2, 8, 10); base.clear(3, 3, 10, 8); }
+    base.line(4, 1, 10, 1, light).line(2, 3, 2, 8, light);
+    base.line(4, 13, 2, 15, edge).line(11, 13, 13, 15, edge);
+    const rows = STAMP_GLYPHS[art[0]] ?? ICONS[art[0]];
+    for (let iy = 0; iy < 8; iy++) for (let ix = 0; ix < 8; ix++) {
+      if (rows[iy][ix] !== '1') continue;
+      if (earned) base.set(ix + 4, iy + 3, iy < 3 ? PAL.cream[3] : ramp[6]);
+      else {
+        base.set(ix + 5, iy + 4, PAL.night[2]);
+        base.set(ix + 4, iy + 3, PAL.ui.borderDim);
+      }
+    }
+    for (let yy = 0; yy < size; yy++) for (let xx = 0; xx < size; xx++)
+      p.set(xx, yy, base.get(Math.floor(xx * 16 / size), Math.floor(yy * 16 / size)));
+  });
+  ctx.drawImage(image, Math.round(x), Math.round(y));
 }
 export function drawCursor(ctx, x, y, t = 0, dir = 'right') {
   const bob = Math.round(Math.sin(t * 7) * 1);
@@ -157,6 +238,34 @@ export function drawParagraph(ctx, str, x, y, width, opts = {}) {
 }
 const SYMBOLS = '± × ÷ ≈ → ← ↑ ↓ • … — ° ² √ ∑ ★ ♥ ✓ ✗ ▼ ▶ ·';
 export const galleries = {
+  icons(ctx, screen) {
+    const { w, h, portrait } = screen, cols = portrait ? 2 : 4;
+    ctx.fillStyle = PAL.night[1]; ctx.fillRect(0, 0, w, h);
+    drawText(ctx, 'POCKET SYMBOLS / V3', 12, 10, { color: PAL.ui.gold });
+    const cw = Math.floor((w - 24) / cols), pitch = Math.min(40, Math.floor((h - 57) / Math.ceil(V3_ICON_IDS.length / cols)));
+    V3_ICON_IDS.forEach((id, i) => {
+      const x = 12 + i % cols * cw, y = 38 + Math.floor(i / cols) * pitch;
+      drawIcon(ctx, id, x + Math.floor(cw / 2) - 4, y);
+      drawText(ctx, id, x + Math.floor(cw / 2), y + 14, { font: 'small', align: 'center', color: PAL.ui.text });
+    });
+  },
+  badges(ctx, screen) {
+    const { w, h, portrait } = screen, cols = portrait ? 4 : 5;
+    ctx.fillStyle = PAL.night[1]; ctx.fillRect(0, 0, w, h);
+    drawText(ctx, 'THE TWENTY ISLAND STAMPS', 12, 9, { font: 'small', color: PAL.ui.gold });
+    drawText(ctx, 'Colour: earned · Outline: locked', 12, 21, { font: 'small', color: PAL.ui.dim });
+    V3_ICON_IDS.forEach((id, i) => drawIcon(ctx, id, 12 + Math.floor((i + 0.5) * (w - 24) / V3_ICON_IDS.length) - 4, 35));
+    const cw = Math.floor((w - 16) / cols), rows = Math.ceil(BADGE_IDS.length / cols), pitch = Math.floor((h - 67) / rows);
+    const size = Math.min(24, Math.floor((cw - 8) / 2), pitch - 16);
+    BADGE_IDS.forEach((id, i) => {
+      const x = 8 + i % cols * cw, y = 54 + Math.floor(i / cols) * pitch, cx = x + Math.floor(cw / 2);
+      drawBadge(ctx, id, cx - size - 2, y, { earned: true, size });
+      drawBadge(ctx, id, cx + 2, y, { earned: false, size });
+      const label = id.replace('first-', '1st-').replace('seven-', '7-').replace('sixteen-', '16-').replace('eight-', '8-').replace('fifteen', '15').replace('five', '5');
+      const lines = wrapText(label, cw - 4, 'small');
+      lines.forEach((line, j) => drawText(ctx, line, cx, y + size + 2 + j * 7, { font: 'small', align: 'center', color: PAL.ui.text }));
+    });
+  },
   ui(ctx, screen, t, page = 0) {
     const { w, h, portrait } = screen, p = page % 6;
     ctx.fillStyle = PAL.night[1]; ctx.fillRect(0, 0, w, h);
@@ -185,8 +294,9 @@ export const galleries = {
         drawWindow(ctx, x, y, cw - 5, 27, style); drawText(ctx, style, x + 10, y + 9, { color: style === 'paper' ? PAL.wood[1] : PAL.ui.text });
       });
       const start = 44 + Math.ceil(6 / cols) * 32, ic = portrait ? 3 : 6, cell = Math.floor((w - 20) / ic);
-      const pitch = Math.min(23, Math.floor((h - start - 19) / Math.ceil(Object.keys(ICONS).length / ic)));
-      Object.keys(ICONS).forEach((name, i) => {
+      const classicIcons = Object.keys(ICONS).filter(id => !V3_ICON_IDS.includes(id));
+      const pitch = Math.min(23, Math.floor((h - start - 19) / Math.ceil(classicIcons.length / ic)));
+      classicIcons.forEach((name, i) => {
         const x = 10 + i % ic * cell, y = start + Math.floor(i / ic) * pitch;
         drawIcon(ctx, name, x + Math.floor(cell / 2) - 4, y);
         drawText(ctx, name.replace('arrow-', ''), x + Math.floor(cell / 2), y + 10, { font: 'small', align: 'center', color: PAL.ui.dim });

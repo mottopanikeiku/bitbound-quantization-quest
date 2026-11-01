@@ -3,6 +3,7 @@ import { Pix, bayer, shadeRamp, spriteCache } from '../art/paint.js';
 import { hash2, makeCanvas } from '../engine/util.js';
 import { drawText, measureText, wrapText } from '../engine/font.js';
 import { drawMenu, drawWindow, drawIcon, drawScrim } from '../ui/kit.js';
+import { completion } from '../progress/progress.js';
 
 const vistaCache = new Map();
 const SKY = [PAL.night[1], PAL.sky[0], PAL.sky[1], PAL.night[5], PAL.ash[5], PAL.sand[3], PAL.sand[5]];
@@ -101,11 +102,18 @@ function drawLogo(ctx, cx, y) {
 }
 export class TitleScene {
   constructor(game) { this.game = game; this.selected = 0; this.confirming = false; this.age = 0; }
-  enter() { this.selected = 0; this.confirming = false; this.age = 0; this.game.setMusicScene('title'); }
+  enter() {
+    this.selected = 0; this.confirming = false; this.age = 0; this.game.setMusicScene('title');
+    const progress = completion(this.game.state);
+    this.game.announce(this.game.state.started ? `Continue selected. Island ${progress.percent}% complete. Well best B${this.game.state.progress?.well?.best ?? 0}.` : 'New Game selected. A or Enter begins the adventure.');
+  }
   items() { return this.confirming ? ['Keep my adventure', 'Begin anew'] : this.game.state.started ? ['Continue', 'New Game'] : ['New Game']; }
   update(dt, input) {
     this.age += dt;
-    if (input.repeat('up') || input.repeat('down')) { this.selected = (this.selected + 1) % this.items().length; this.game.audio.play('menu-move'); }
+    if (input.repeat('up') || input.repeat('down')) {
+      this.selected = (this.selected + 1) % this.items().length; this.game.audio.play('menu-move');
+      this.game.announce(`${this.items()[this.selected]} selected.`);
+    }
     if (this.confirming && input.pressed('cancel')) { input.consume('cancel'); this.confirming = false; this.selected = 1; return; }
     if (!input.pressed('confirm')) return; input.consume('confirm');
     if (this.confirming) {
@@ -124,11 +132,19 @@ export class TitleScene {
     drawText(ctx, 'THE STATIC ISLE', cx, top + 48, { align: 'center', color: PAL.cream[3], shadow: PAL.ink });
     const sy = top + 63;
     ctx.fillStyle = PAL.gold[4]; ctx.fillRect(cx - 38, sy + 3, 26, 1); ctx.fillRect(cx + 12, sy + 3, 26, 1); drawIcon(ctx, 'bits', cx - 4, sy);
-    const mw = 129, my = portrait ? h - 94 : h - 71, mh = this.items().length === 1 ? 33 : 48;
-    drawWindow(ctx, cx - Math.round(mw / 2), my, mw, mh, 'glass');
-    drawMenu(ctx, cx - 49, my + 11, this.game.state.started ? ['Continue', 'New Game'] : ['New Game'], this.confirming ? 1 : this.selected, { colWidth: 105, rowHeight: 16, t: this.game.reducedMotion ? 0 : t });
-    const keys = w >= 240 ? 'Enter begins with music · M mutes · F full screen' : 'Enter begins · M music · F full screen';
-    drawText(ctx, this.game.input.lastDevice === 'touch' ? 'A begins the adventure · B goes back' : keys, cx, h - 12, { font: 'small', align: 'center', color: PAL.cream[1], shadow: PAL.ink });
+    const saved = this.game.state.started, mw = saved ? 188 : 129;
+    const mh = saved ? 74 : 33, my = portrait ? h - mh - 36 : h - mh - 25;
+    const mx = cx - Math.round(mw / 2);
+    drawWindow(ctx, mx, my, mw, mh, 'glass');
+    drawMenu(ctx, mx + 14, my + 11, saved ? ['Continue'] : ['New Game'], this.confirming ? -1 : saved && this.selected === 1 ? -1 : 0, { colWidth: mw - 28, t: 0 });
+    if (saved) {
+      const progress = completion(this.game.state);
+      drawIcon(ctx, 'map', mx + 26, my + 26);
+      drawText(ctx, `Island ${progress.percent}% · Well B${this.game.state.progress?.well?.best ?? 0}`, mx + 39, my + 27, { font: 'small', color: PAL.cream[2] });
+      drawMenu(ctx, mx + 14, my + 49, ['New Game'], this.confirming || this.selected === 1 ? 0 : -1, { colWidth: mw - 28, t: 0 });
+    }
+    const keys = w >= 240 ? '↑↓ Choose · Enter begins · M music · F full screen' : 'Enter begins · M music · F full screen';
+    drawText(ctx, this.game.input.lastDevice === 'touch' ? '↑↓ Choose · A begins · B goes back' : keys, cx, h - 12, { font: 'small', align: 'center', color: PAL.cream[1], shadow: PAL.ink });
     if (this.confirming) {
       drawScrim(ctx, screen); const width = Math.min(w - 28, 232), x = Math.round((w - width) / 2), y = Math.round((h - 118) / 2);
       drawWindow(ctx, x, y, width, 118, 'danger'); drawText(ctx, 'Begin a new adventure?', x + 13, y + 12, { color: PAL.ui.bad });

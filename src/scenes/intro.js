@@ -87,7 +87,11 @@ export class IntroScene {
   draw(ctx, screen, t) {
     const { w, h, portrait } = screen, panel = PANELS[this.index], lift = panelLift(this.age, this.game.reducedMotion);
     ctx.fillStyle = PAL.night[1]; ctx.fillRect(0, 0, w, h);
-    const iw = portrait ? w - 24 : 191, ih = portrait ? Math.min(186, Math.round(h * 0.44)) : 143;
+    const iw = portrait ? w - 24 : 191;
+    const copyW = portrait ? w - 36 : w - 235;
+    const copyH = wrapText(panel.chapter, copyW, 'small').length * 8 + 17
+      + (wrapText(panel.title, copyW).length + wrapText(panel.text, copyW).length) * 11;
+    const ih = portrait ? Math.min(186, Math.round(h * 0.44), h - 94 - copyH) : 143;
     const ix = 12, iy = portrait ? 35 : 31;
     drawText(ctx, 'THE STATIC ISLE', 14, 12, { font: 'small', color: PAL.ui.faint });
     drawText(ctx, `${this.index + 1} / 4`, w - 14, 12, { font: 'small', align: 'right', color: PAL.ui.gold });
@@ -101,7 +105,8 @@ export class IntroScene {
     y += 9;
     for (const row of wrapText(panel.text, tw)) { drawText(ctx, row, tx, y, { color: PAL.ui.dim }); y += 11; }
     drawPageDots(ctx, w / 2, h - 28, 4, this.index);
-    drawText(ctx, this.index === 3 ? 'A / Enter  Take the staff' : 'A / Enter  Next', 14, h - 16, { font: 'small', color: PAL.ui.gold });
-    drawText(ctx, 'B / Esc  Skip', w - 14, h - 16, { font: 'small', color: PAL.ui.faint, align: 'right' });
+    const touch = this.game.input.lastDevice === 'touch';
+    drawText(ctx, this.index === 3 ? `${touch ? 'A' : 'Enter'}  Take the staff` : `${touch ? 'A' : 'Enter'}  Next`, 14, h - 16, { font: 'small', color: PAL.ui.gold });
+    drawText(ctx, `${touch ? 'B' : 'Esc'}  Skip`, w - 14, h - 16, { font: 'small', color: PAL.ui.faint, align: 'right' });
   }
 }

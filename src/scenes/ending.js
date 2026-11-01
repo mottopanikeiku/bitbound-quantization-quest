@@ -3,11 +3,12 @@ import { spriteCache, shadeRamp } from '../art/paint.js';
 import { clamp, lerp } from '../engine/util.js';
 import { drawText, wrapText } from '../engine/font.js';
 import { drawWindow, drawBar, drawIcon } from '../ui/kit.js';
-import { drawOracleCore } from '../art/portraits.js';
+import { drawOracleCore, drawPortrait } from '../art/portraits.js';
 import { drawSpirit } from '../art/creatures.js';
 import { REAL_WORLD } from '../content/lessons.js';
 import { GUARDIANS, TECHNIQUE_ORDER, TECHNIQUES } from '../content/game-data.js';
 import { drawIsleVista } from './title.js';
+import { completion } from '../progress/progress.js';
 
 const CONTRIBUTIONS = [
   ['Nib', 'bits', 'We do not need every bit to keep the shape. Start with a finer choice: 16 bits become 8.'],
@@ -179,7 +180,11 @@ export class EndingScene {
     if (this.step === 0) this.game.announce(`The Lighthouse Oracle has ${REAL_WORLD.oracle.weights / 1e9} billion weights: ${REAL_WORLD.oracle.fp16GB} GB at 16 bits.`);
     else if (this.step <= 7) this.game.announce(`${CONTRIBUTIONS[this.step - 1][0]}: ${CONTRIBUTIONS[this.step - 1][2]}`);
     else if (this.step === 8) this.game.announce('The Oracle fits. Seven friends. One bright island.');
-    else this.game.announce('Thank you for exploring the Static Isle. Enter returns to free exploration.');
+    else {
+      const c = completion(this.game.state), key = this.game.input.lastDevice === 'touch' ? 'A' : 'Enter';
+      const fen = this.game.state.rival?.won?.length ? ' Fen: My satchel is lighter. My map is better.' : '';
+      this.game.announce(`Journal: ${this.game.state.friends.length} friends, ${c.dex} of 21 species, ${c.badges} of 20 badges, Well best B${c.well}.${fen} The island is yours: rematches, the Well and the Journal. ${key} returns to free exploration.`);
+    }
   }
   update(dt, input) {
     this.age += dt;
@@ -227,8 +232,9 @@ export class EndingScene {
     });
     const caveat = portrait ? '4-bit: FP16 scales / 128.\nNot total runtime memory.' : '4-bit: weights + FP16 scales / 128. Not total runtime memory.';
     drawText(ctx, caveat, Math.round(w / 2), h - (portrait ? 40 : 33), { font: 'small', color: PAL.ui.dim, align: 'center' });
-    drawText(ctx, 'A / Enter  Continue', 20, h - 20, { font: 'small', color: PAL.ui.gold });
-    drawText(ctx, 'B / Esc  Credits', w - 20, h - 20, { font: 'small', color: PAL.ui.dim, align: 'right' });
+    const touch = this.game.input.lastDevice === 'touch';
+    drawText(ctx, `${touch ? 'A' : 'Enter'}  Continue`, 20, h - 20, { font: 'small', color: PAL.ui.gold });
+    drawText(ctx, `${touch ? 'B' : 'Esc'}  Credits`, w - 20, h - 20, { font: 'small', color: PAL.ui.dim, align: 'right' });
   }
   drawReveal(ctx, screen, t) {
     const { w, h, portrait } = screen, reduced = this.game.reducedMotion;
@@ -249,27 +255,45 @@ export class EndingScene {
     drawText(ctx, caveat, Math.round(w / 2), 64, { font: 'small', color: PAL.ui.dim, align: 'center' });
     drawWindow(ctx, 8, g.copyY, w - 16, g.copyH, 'glass');
     g.lines.forEach((line, i) => drawText(ctx, line, 22, g.copyY + 6 + i * 11, { color: PAL.ui.text }));
-    drawText(ctx, 'A / Enter  Credits', 16, h - 13, { font: 'small', color: PAL.ui.gold, shadow: PAL.ink });
-    drawText(ctx, 'B / Esc  Credits', w - 16, h - 13, { font: 'small', color: PAL.ui.dim, align: 'right', shadow: PAL.ink });
+    const touch = this.game.input.lastDevice === 'touch';
+    drawText(ctx, `${touch ? 'A' : 'Enter'}  Credits`, 16, h - 13, { font: 'small', color: PAL.ui.gold, shadow: PAL.ink });
+    drawText(ctx, `${touch ? 'B' : 'Esc'}  Credits`, w - 16, h - 13, { font: 'small', color: PAL.ui.dim, align: 'right', shadow: PAL.ink });
   }
   drawCredits(ctx, screen, t) {
-    const { w, h, portrait } = screen;
-    const titleY = portrait ? 48 : 28;
-    drawText(ctx, 'A smaller memory.', Math.round(w / 2), titleY, { font: 'big', align: 'center', color: PAL.cream[3], shadow: PAL.ink });
-    drawText(ctx, 'A bigger world.', Math.round(w / 2), titleY + 24, { font: 'big', align: 'center', color: PAL.gold[6], shadow: PAL.ink });
+    const { w, h, portrait } = screen, cx = Math.round(w / 2), reduced = this.game.reducedMotion;
+    const titleY = portrait ? 18 : 12;
+    drawText(ctx, 'A smaller memory.', cx, titleY, { font: 'big', align: 'center', color: PAL.cream[3], shadow: PAL.ink });
+    drawText(ctx, 'A bigger world.', cx, titleY + 24, { font: 'big', align: 'center', color: PAL.gold[6], shadow: PAL.ink });
     const memory = `${REAL_WORLD.oracle.fp16GB} GB → ${REAL_WORLD.oracle.int8GB} GB → ≈${REAL_WORLD.oracle.int4GB.toFixed(1)} GB`;
-    drawText(ctx, memory, Math.round(w / 2), titleY + 57, { align: 'center', color: PAL.teal[8], shadow: PAL.ink });
-    const cols = portrait ? 4 : 7, gap = portrait ? 47 : 49, startY = portrait ? 167 : 127;
+    drawText(ctx, memory, cx, titleY + 51, { font: 'small', align: 'center', color: PAL.teal[8], shadow: PAL.ink });
+    const cols = portrait ? 4 : 7, gap = portrait ? Math.min(47, Math.floor((w - 30) / 4)) : Math.min(49, Math.floor((w - 32) / 7));
+    const startY = portrait ? 119 : 96;
     GUARDIANS.forEach((friend, i) => {
       const rowCount = portrait && i >= 4 ? 3 : cols;
-      const x = Math.round(w / 2 - (rowCount - 1) * gap / 2 + (i % cols) * gap), y = startY + Math.floor(i / cols) * 54;
-      drawSpirit(ctx, friend.key, x, y, { t: this.game.reducedMotion ? 0 : t });
+      const x = Math.round(cx - (rowCount - 1) * gap / 2 + (i % cols) * gap), y = startY + Math.floor(i / cols) * 42;
+      drawSpirit(ctx, friend.key, x, y, { t: reduced ? 0 : t });
       drawText(ctx, friend.name, x, y + 6, { font: 'small', align: 'center', color: PAL.cream[3], shadow: PAL.ink });
       drawIcon(ctx, TECHNIQUE_ORDER[i], x - 4, y + 17);
     });
-    drawText(ctx, 'Original art, music & a little rounding magic.', Math.round(w / 2), h - 49, { font: 'small', align: 'center', color: PAL.cream[1], shadow: PAL.ink });
-    drawText(ctx, 'Thank you for keeping what matters.', Math.round(w / 2), h - 37, { align: 'center', color: PAL.cream[3], shadow: PAL.ink });
-    drawWindow(ctx, Math.round(w / 2) - 85, h - 24, 170, 18, 'glass');
-    drawText(ctx, 'A / Enter  Return to the isle', Math.round(w / 2), h - 19, { font: 'small', align: 'center', color: PAL.ui.gold });
+    const c = completion(this.game.state), fen = this.game.state.rival?.won?.length > 0;
+    const py = portrait ? 188 : 130, ph = Math.min(portrait ? 100 : 76, h - py - 30), px = 8, pw = w - 16;
+    drawWindow(ctx, px, py, pw, ph, 'gold');
+    const textW = pw - 24 - (fen && !portrait ? 47 : 0);
+    const summary = `${this.game.state.friends.length}/7 friends · Dex ${c.dex}/21 · Badges ${c.badges}/20 · Well B${c.well}`;
+    let y = py + 8;
+    for (const line of wrapText(summary, textW, 'small')) { drawText(ctx, line, px + 12, y, { font: 'small', color: PAL.ui.gold }); y += 8; }
+    y += 4;
+    for (const line of wrapText('The island is yours: rematches, the Well and the Journal.', textW, 'small')) {
+      drawText(ctx, line, px + 12, y, { font: 'small', color: PAL.cream[3] }); y += 8;
+    }
+    if (fen) {
+      const fy = portrait ? py + ph - 46 : py + 9;
+      drawPortrait(ctx, 'fen', w - 60, fy, { t: reduced ? 0 : t, mood: 'happy' });
+      const quoteY = portrait ? fy + 8 : y + 3;
+      for (const [i, line] of wrapText('Fen: "Lighter satchel. Better map."', pw - 71, 'small').entries())
+        drawText(ctx, line, px + 12, quoteY + i * 8, { font: 'small', color: PAL.teal[8] });
+    }
+    drawWindow(ctx, cx - 85, h - 24, 170, 18, 'glass');
+    drawText(ctx, `${this.game.input.lastDevice === 'touch' ? 'A' : 'Enter'}  Return to the isle`, cx, h - 19, { font: 'small', align: 'center', color: PAL.ui.gold });
   }
 }

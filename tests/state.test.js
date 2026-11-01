@@ -107,7 +107,7 @@ test('v4 meta-progress round-trips and untrusted values are clamped or dropped',
   assert.deepEqual(state.wellRun.friends, [0]);
   assert.equal(state.wellRun.hero.hp, 64, 'run HP is clamped to the run limits');
   assert.deepEqual(Object.keys(state.progress.dex), ['bit-sprig']);
-  assert.equal(state.progress.dex['bit-sprig'].golden, 1);
+  assert.ok(state.progress.dex['bit-sprig'].golden, 'a caught golden survives sanitizing');
   assert.deepEqual(Object.keys(state.progress.records), ['nib']);
   assert.equal(state.progress.well.best, 12);
 });

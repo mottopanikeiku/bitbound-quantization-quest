@@ -31,10 +31,11 @@ kbd { font: 10px/1.3 ui-monospace, SFMono-Regular, Consolas, monospace; color: #
 }
 
 @media (pointer: coarse) {
-  .touch { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 124px; padding: 5px 6px 8px; touch-action: none; user-select: none; -webkit-user-select: none; background: var(--bg); }
-  .touch button { position: relative; display: flex; align-items: center; justify-content: center; border: 1px solid #a9a2c44d; background: #1b1630; box-shadow: 0 3px 0 #080611, inset 0 1px 0 #fff4dc12; color: #d0c6dd; border-radius: 7px; padding: 0; touch-action: none; }
+  /* Dedicated control space keeps 44px targets away from the canvas and its battle text. */
+  .touch { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 149px; padding: 5px 6px 8px; touch-action: none; user-select: none; -webkit-user-select: none; background: var(--bg); }
+  .touch button { position: relative; display: flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; flex-shrink: 0; border: 1px solid #a9a2c44d; background: #1b1630; box-shadow: 0 3px 0 #080611, inset 0 1px 0 #fff4dc12; color: #d0c6dd; border-radius: 7px; padding: 0; touch-action: none; }
   .touch button:active, .touch button.is-held { background: #3b3466; color: var(--gold); box-shadow: 0 1px 0 #080611, inset 0 1px 0 #fff4dc20; transform: translateY(2px); }
-  .dpad { display: grid; grid-template-columns: repeat(3, 37px); grid-template-rows: repeat(3, 34px); gap: 2px; }
+  .dpad { flex: none; display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 44px); gap: 2px; }
   .dpad button { font-size: 21px; }
   .dpad [data-action="up"] { grid-column: 2; grid-row: 1; }
   .dpad [data-action="left"] { grid-column: 1; grid-row: 2; }
@@ -45,19 +46,20 @@ kbd { font: 10px/1.3 ui-monospace, SFMono-Regular, Consolas, monospace; color: #
   .touch-aux .steady-button { flex-direction: column; gap: 3px; width: 52px; height: 44px; border-color: #72d6bc66; border-radius: 8px; background: #123331; color: var(--teal); }
   .steady-button b { font: 8px/1 ui-monospace, monospace; letter-spacing: .05em; }
   .steady-button small { font: 8px/1 system-ui, sans-serif; color: #a9a2c4; }
-  .touch-aux .start-button { width: 44px; height: 25px; border-radius: 12px; font: 8px ui-monospace, monospace; letter-spacing: .02em; }
+  .touch-aux .start-button { width: 44px; height: 44px; border-radius: 12px; font: 8px ui-monospace, monospace; letter-spacing: .02em; }
   .face { display: grid; flex: none; grid-template-columns: 48px 54px; grid-template-rows: 64px 16px; align-items: start; gap: 4px; }
   .face .back-button { grid-column: 1; grid-row: 1; margin-top: 22px; width: 48px; height: 48px; border-radius: 50%; }
   .face .act-button { grid-column: 2; grid-row: 1; border-color: #72d6bc88; color: var(--teal); width: 53px; height: 53px; border-radius: 50%; background: #123331; }
   .face b { font: 19px/1 ui-monospace, monospace; }
   .face small { position: absolute; top: calc(100% + 7px); font-size: 8px; color: #88839e; }
   .actions kbd { display: none; }
+  .actions button, .source-link { min-width: 44px; min-height: 44px; }
 }
 @media (pointer: coarse) and (orientation: landscape) {
-  .stage { align-self: center; width: calc(100% - 256px); }
+  .stage { align-self: center; width: calc(100% - 304px); }
   .touch { position: absolute; inset: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(7px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); min-height: 0; padding: 0; pointer-events: none; background: none; }
   .touch button { pointer-events: auto; }
-  .touch-aux { position: absolute; left: 0; top: calc(50% + 62px); width: 115px; flex-direction: row; justify-content: center; gap: 7px; }
+  .touch-aux { position: absolute; left: 0; top: calc(50% + 76px); width: 136px; flex-direction: row; justify-content: center; gap: 8px; }
   .touch-aux .steady-button { width: 60px; height: 44px; flex: none; gap: 2px; }
   .touch-aux .start-button { flex: none; }
   .face { grid-template-columns: 48px 54px; grid-template-rows: 64px 16px; gap: 3px; }
