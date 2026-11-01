@@ -38,6 +38,24 @@ const EFFECTS = {
   "menu-move": { notes: [[659.25, 0, 0.045, "pluck", 0.09, 739.99]], cooldown: 0.045 },
   "menu-back": { notes: [[587.33, 0, 0.065, "softPulse", 0.075], [392, 0.055, 0.085, "softPulse", 0.07]], cooldown: 0.085 },
   gate: { notes: [[146.83, 0, 0.36, "reed", 0.12, 293.66], [440, 0.14, 0.31, "flute", 0.10, 587.33], [880, 0.38, 0.32, "bell", 0.14]], noise: [[0.03, 0.28, 0.055, 2100]], cooldown: 0.55, duck: 0.55 },
+  // Mastery cues use A-minor chord pairs, not the D-major data-value scale.
+  resonance: { notes: [[220, 0, 0.13, "reed", 0.105], [329.63, 0.055, 0.19, "reed", 0.085]], cooldown: 0.09 },
+  "resonance-max": { notes: [[440, 0, 0.13, "reed", 0.11], [523.25, 0.07, 0.14, "reed", 0.10], [659.25, 0.14, 0.16, "reed", 0.09], [880, 0.23, 0.38, "bell", 0.14]], cooldown: 0.4, duck: 0.45 },
+  "grade-tick": { notes: [[698.46, 0, 0.045, "pluck", 0.08]], cooldown: 0.035 },
+  "grade-stamp": { notes: [[130.81, 0, 0.12, "triangle", 0.19, 65.41], [523.25, 0.025, 0.22, "bell", 0.12], [783.99, 0.025, 0.22, "bell", 0.09]], noise: [[0, 0.035, 0.075, 1500]], cooldown: 0.25, duck: 0.3 },
+  record: { notes: [[523.25, 0, 0.10, "softPulse", 0.10], [659.25, 0.08, 0.10, "softPulse", 0.10], [783.99, 0.16, 0.12, "softPulse", 0.095], [1046.5, 0.26, 0.32, "bell", 0.15]], cooldown: 0.4, duck: 0.45 },
+  badge: { notes: [[349.23, 0, 0.13, "reed", 0.10], [440, 0.09, 0.13, "reed", 0.09], [523.25, 0.18, 0.18, "reed", 0.09], [698.46, 0.30, 0.36, "bell", 0.14]], cooldown: 0.5, duck: 0.55 },
+  golden: { notes: [[1318.51, 0, 0.16, "bell", 0.12], [1567.98, 0.075, 0.17, "bell", 0.105], [2093, 0.15, 0.30, "bell", 0.10]], cooldown: 0.45, duck: 0.3 },
+  assist: { notes: [[261.63, 0, 0.16, "flute", 0.11, 523.25], [392, 0.07, 0.17, "flute", 0.095, 783.99], [659.25, 0.19, 0.24, "bell", 0.12]], cooldown: 0.25, duck: 0.35 },
+  boon: { notes: [[329.63, 0, 0.13, "pluck", 0.14], [392, 0.08, 0.15, "pluck", 0.13], [493.88, 0.16, 0.17, "pluck", 0.12], [659.25, 0.28, 0.30, "flute", 0.12]], cooldown: 0.35, duck: 0.4 },
+  descend: { notes: [[659.25, 0, 0.38, "flute", 0.12, 164.81], [493.88, 0.10, 0.40, "pad", 0.075, 123.47]], noise: [[0.04, 0.28, 0.035, 1700]], cooldown: 0.4, duck: 0.5 },
+  warden: { notes: [[82.41, 0, 0.46, "reed", 0.14], [123.47, 0.09, 0.42, "reed", 0.09], [164.81, 0.18, 0.37, "reed", 0.085], [246.94, 0.30, 0.25, "bell", 0.12]], noise: [[0, 0.15, 0.065, 800]], cooldown: 0.6, duck: 0.65 },
+  "duel-accept": { notes: [[392, 0, 0.08, "pluck", 0.14], [523.25, 0.07, 0.09, "pluck", 0.13], [659.25, 0.14, 0.22, "reed", 0.11]], cooldown: 0.2, duck: 0.25 },
+  "duel-reject": { notes: [[392, 0, 0.09, "pluck", 0.13], [349.23, 0.085, 0.11, "reed", 0.10], [329.63, 0.17, 0.14, "pluck", 0.11]], cooldown: 0.2 },
+  travel: { notes: [[261.63, 0, 0.16, "flute", 0.11], [392, 0.10, 0.19, "flute", 0.10], [523.25, 0.22, 0.29, "pad", 0.09]], noise: [[0.05, 0.23, 0.025, 2500]], cooldown: 0.4, duck: 0.4 },
+  rustle: { notes: [], noise: [[0, 0.065, 0.035, 2600]], cooldown: 0.14 },
+  seen: { notes: [[659.25, 0, 0.055, "flute", 0.075], [783.99, 0.075, 0.095, "pluck", 0.075]], cooldown: 0.8 },
+  pin: { notes: [[523.25, 0, 0.06, "pluck", 0.12], [1046.5, 0.045, 0.12, "bell", 0.085]], cooldown: 0.15 },
 };
 
 export const EFFECT_NAMES = Object.freeze(Object.keys(EFFECTS));
@@ -61,6 +79,7 @@ export class GameAudio {
     this.context = null;
     this.analyser = null;
     this.scene = "overworld";
+    this.intensity = 0;
     this._unlocked = false;
     this._destroyed = false;
     this._audible = false;
@@ -135,7 +154,16 @@ export class GameAudio {
     return true;
   }
 
-  play(name) {
+  /** Raise a phase-aligned arrangement bus; never reset the score's cursor. */
+  setIntensity(level) {
+    if (this._destroyed) return false;
+    this.intensity = clamp(Number.isFinite(level) ? level : 0, 0, 1);
+    if (this._intensityGain)
+      this._intensityGain.gain.setTargetAtTime(this.intensity, this.context.currentTime, 0.12);
+    return true;
+  }
+
+  play(name, opts = {}) {
     if (!this._canPlay() || this.context?.state !== "running") return false;
     // Legacy callers used select as the fallback for unnamed UI confirmations.
     const key = Object.hasOwn(EFFECTS, name) ? name : "select";
@@ -145,8 +173,10 @@ export class GameAudio {
     this._lastEffects.set(key, now);
     if (effect.duck) this._duckMusic(effect.duck);
     const start = now + 0.005;
+    const resonanceLevel = clamp(Math.round(Number.isFinite(opts?.level) ? opts.level : 1), 1, 4);
+    const pitchRatio = key === "resonance" ? 2 ** ([0, 3, 7, 12][resonanceLevel - 1] / 12) : 1;
     for (const [frequency, delay, duration, wave, level, endFrequency] of effect.notes)
-      this._tone(frequency, start + delay, duration, wave, level, "sfx", endFrequency);
+      this._tone(frequency * pitchRatio, start + delay, duration, wave, level, "sfx", endFrequency);
     for (const [delay, duration, level, cutoff] of effect.noise ?? [])
       this._noise(start + delay, duration, level, cutoff, "sfx");
     return true;
@@ -211,6 +241,9 @@ export class GameAudio {
     const context = this.context;
     this._musicGain = context.createGain();
     this._musicGain.gain.value = MUSIC_LEVEL;
+    this._intensityGain = context.createGain();
+    this._intensityGain.gain.value = this.intensity;
+    this._intensityGain.connect(this._musicGain);
     this._musicFilter = context.createBiquadFilter();
     this._musicFilter.type = "lowpass";
     this._musicFilter.frequency.value = SCORES[this.scene].cutoff;
@@ -244,7 +277,7 @@ export class GameAudio {
     compressor.connect(limiter);
     limiter.connect(this.analyser);
     this.analyser.connect(context.destination);
-    this._graphNodes = [this._musicGain, this._musicFilter, this._effectsGain,
+    this._graphNodes = [this._musicGain, this._intensityGain, this._musicFilter, this._effectsGain,
       this._master, compressor, limiter, this.analyser];
 
     const harmonics = {
@@ -406,11 +439,12 @@ export class GameAudio {
   _scoreEvent(event, time) {
     const start = time + (event.delay ?? 0);
     if (event.voice === "tone")
-      this._tone(event.frequency, start, event.duration, event.wave, event.level, "music");
+      this._tone(event.frequency, start, event.duration, event.wave, event.level, "music",
+        undefined, undefined, event.layer === "intensity" ? this._intensityGain : this._musicGain);
     else this._drum(event.voice, start, event.level);
   }
 
-  _tone(frequency, start, duration, wave, level, category, endFrequency, contour) {
+  _tone(frequency, start, duration, wave, level, category, endFrequency, contour, destination) {
     const context = this.context;
     const source = context.createOscillator();
     const envelope = context.createGain();
@@ -431,7 +465,7 @@ export class GameAudio {
     envelope.gain.setValueAtTime(sustain, start + duration - release);
     envelope.gain.linearRampToValueAtTime(0, start + duration);
     source.connect(envelope);
-    envelope.connect(category === "music" ? this._musicGain : this._effectsGain);
+    envelope.connect(destination ?? (category === "music" ? this._musicGain : this._effectsGain));
     this._trackVoice(source, envelope, [source, envelope], start, category);
     source.start(start);
     source.stop(start + duration + 0.005);

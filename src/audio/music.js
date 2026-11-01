@@ -13,7 +13,7 @@ function compose({
   lead = "square", leadLevel = 0.076, arpLevel = 0.027,
   arpWave = "square", bassWave = "triangle", bassLevel = 0.145,
   cutoff = 4600, pad = true, padLevel = 0.014,
-  barSteps = 16, swing = 0, echo = 0,
+  barSteps = 16, swing = 0, echo = 0, intensity = false,
 }) {
   const stepSeconds = 60 / bpm / 4;
   const steps = Array.from({ length: chords.length * barSteps }, () => []);
@@ -60,6 +60,14 @@ function compose({
     if (pad) {
       tone(start, chord[0], barSteps, "pad", padLevel, 1.06);
       tone(start, chord[2], barSteps, "pad", padLevel * 0.72, 1.06);
+    }
+    // Written counterpulse stays on the same clock at zero gain. Resonance only
+    // opens its bus; adding intensity never re-enters or restarts a phrase.
+    if (intensity) {
+      const pattern = barSteps === 12 ? [2, 5, 8, 11] : [2, 6, 10, 14];
+      for (let i = 0; i < pattern.length; i++)
+        add(start + pattern[i], { voice: "tone", frequency: frequency(chord[i % 3] + 12),
+          duration: stepSeconds * 1.7, wave: "pluck", level: 0.055, layer: "intensity" });
     }
   });
   return { bpm, stepSeconds, steps, cutoff, barSteps, bars: chords.length };
@@ -308,6 +316,7 @@ export const SCORES = {
   // "Packet Skirmish": 144 BPM, sixteen bars. Minor hook, half-time major B, rebuild.
   battle: compose({
     bpm: 144,
+    intensity: true,
     cutoff: 5100,
     leadLevel: 0.077,
     arpLevel: 0.024,
@@ -554,6 +563,7 @@ export const SCORES = {
   // "Guardian Current": 132 BPM, sixteen bars. 3+3+2 pressure, broad B, dominant return.
   boss: compose({
     bpm: 132,
+    intensity: true,
     cutoff: 4300,
     lead: "sawtooth",
     leadLevel: 0.074,
@@ -1098,6 +1108,7 @@ const MODES = {
   mixolydian: [0, 2, 4, 5, 7, 9, 10],
   lydian: [0, 2, 4, 6, 7, 9, 11],
   minor: [0, 2, 3, 5, 7, 8, 10],
+  phrygian: [0, 1, 3, 5, 7, 8, 10],
 };
 function islandTheme({
   tonic, mode, roots, a, b, home = a,
@@ -1324,6 +1335,82 @@ Object.assign(SCORES, {
     replyDrums: [[0, "kick", 0.42], [8, "tom", 0.3], [14, "metal", 0.22]],
     fill: [[14, "tom", 0.35], [15, "snare", 0.3]],
   }),
+  // "Under the Lantern": each A phrase descends, B answers from below.
+  well: islandTheme({
+    tonic: "B3", mode: "dorian", bpm: 78, barSteps: 12, cutoff: 3100,
+    intensity: true, lead: "bell", leadLevel: 0.12, arpWave: "flute", arpLevel: 0.038,
+    bassLevel: 0.10, padLevel: 0.023, echo: 0.20,
+    roots: [0, 6, 3, 0, 0, 6, 5, 4, 2, 3, 6, 4, 0, 3, 6, 0],
+    a: [
+      [[0, 7, 3], [3, 5, 1], [4, 4, 3], [8, 2, 4]],
+      [[0, 6, 4], [4, 4, 3], [8, 1, 2], [10, -1, 2, 0.8]],
+      [[0, 5, 3], [3, 3, 1], [4, 2, 4], [8, 0, 4]],
+      [[0, 4, 4], [4, 2, 3], [8, 0, 2], [10, -3, 2, 0.8]],
+    ],
+    b: [
+      [[0, -3, 5], [6, -1, 2], [8, 2, 4]],
+      [[0, 0, 4], [4, 3, 3], [8, 2, 4]],
+      [[0, -1, 4], [4, 1, 4], [8, 4, 3]],
+      [[0, 2, 5], [6, 1, 2], [8, -1, 4]],
+    ],
+    bass: [[0, 0, 7], [8, 7, 3]], arp: [0, null, 2, null, 1, 3],
+    drums: [[0, "kick", 0.28], [6, "shaker", 0.3], [10, "metal", 0.2]],
+    replyLead: "flute", replyArp: [0, null, 1],
+    replyDrums: [[0, "kick", 0.20], [8, "shaker", 0.2]],
+    fill: [[11, "rim", 0.18]],
+  }),
+
+  // "The Well Holds Its Breath": lowered second, 3+3+2 pulse, broad reply.
+  warden: islandTheme({
+    tonic: "E4", mode: "phrygian", bpm: 126, cutoff: 3800, intensity: true,
+    lead: "reed", leadLevel: 0.09, arpWave: "softPulse", arpLevel: 0.030,
+    bassWave: "triangle", bassLevel: 0.145, padLevel: 0.019,
+    roots: [0, 1, 3, 0, 0, 1, 5, 4, 2, 6, 3, 1, 0, 3, 1, 0],
+    a: [
+      [[0, 0, 3], [3, 1, 2], [6, 0, 2], [8, 4, 3], [12, 2, 2], [14, 1, 2]],
+      [[0, 1, 3], [3, 3, 2], [6, 5, 2], [8, 3, 4], [12, 1, 3]],
+      [[0, 3, 3], [3, 4, 2], [6, 5, 2], [8, 7, 3], [12, 5, 3]],
+      [[0, 4, 3], [3, 2, 2], [6, 1, 2], [8, 0, 4], [12, -1, 3]],
+    ],
+    b: [
+      [[0, 2, 6], [8, 4, 6], [14, 3, 2]],
+      [[0, -1, 6], [6, 2, 2], [8, 5, 6]],
+      [[0, 3, 6], [8, 0, 4], [12, 2, 3]],
+      [[0, 1, 8], [10, 3, 3], [14, 1, 2]],
+    ],
+    bass: [[0, 0, 2], [3, 0, 2], [6, 7, 2], [8, 0, 3], [12, 12, 3]],
+    arp: [0, 1, null, 2, 3, 2, null, 1],
+    drums: [[0, "kick", 0.7], [6, "kick", 0.4], [8, "kick", 0.6], [4, "snare", 0.5], [12, "snare", 0.52], [2, "hat", 0.45], [10, "metal", 0.35], [14, "hat", 0.4]],
+    replyLead: "softPulse", replyArp: [0, null, 1, 2],
+    replyDrums: [[0, "kick", 0.6], [8, "snare", 0.48], [14, "tom", 0.4]],
+    fill: [[14, "tom", 0.5], [15, "tom", 0.35]],
+  }),
+
+  // "Fen's Overstuffed Atlas": short offbeat questions and a low-register answer.
+  rival: islandTheme({
+    tonic: "G3", mode: "mixolydian", bpm: 132, cutoff: 4600, swing: 0.12,
+    lead: "pluck", leadLevel: 0.16, arpWave: "reed", arpLevel: 0.035,
+    bassLevel: 0.13, padLevel: 0.012, echo: 0.10,
+    roots: [0, 6, 3, 4, 0, 6, 1, 4, 5, 3, 6, 4, 0, 3, 6, 0],
+    a: [
+      [[1, 0, 2], [4, 2, 1], [6, 4, 2], [9, 6, 1], [12, 5, 2], [14, 4, 1]],
+      [[0, 6, 2], [3, 4, 1], [6, 2, 2], [10, 1, 1], [12, -1, 3]],
+      [[1, 3, 2], [4, 5, 1], [7, 7, 2], [10, 5, 1], [13, 3, 2]],
+      [[0, 4, 2], [3, 1, 1], [6, -1, 2], [9, 1, 2], [13, 4, 2]],
+    ],
+    b: [
+      [[0, -2, 5], [6, 0, 2], [10, 2, 3], [14, 1, 2]],
+      [[1, 0, 4], [6, -2, 2], [10, -4, 3], [14, -2, 2]],
+      [[0, -1, 4], [6, 2, 3], [10, 4, 2], [13, 6, 2]],
+      [[0, 1, 5], [6, -1, 3], [10, 1, 2], [14, 4, 2]],
+    ],
+    bass: [[0, 0, 2], [4, 7, 2], [8, 12, 2], [12, 7, 2]],
+    arp: [null, 0, null, 1, null, 2, null, 3],
+    drums: [[0, "kick", 0.58], [8, "kick", 0.5], [4, "rim", 0.6], [12, "rim", 0.62], [2, "shaker", 0.5], [6, "shaker", 0.4], [10, "shaker", 0.5], [14, "shaker", 0.48]],
+    replyLead: "reed", replyArp: [0, null, 2, 1],
+    replyDrums: [[0, "kick", 0.45], [8, "rim", 0.55], [6, "conga", 0.3], [14, "shaker", 0.4]],
+    fill: [[15, "rim", 0.35]],
+  }),
 });
 
 // Score notes are kept beside the source so a musical review need not reverse-
@@ -1342,4 +1429,7 @@ export const SCORE_INFO = Object.freeze({
   forge: { title: "Little Engines", key: "E Dorian", meter: "4/4", form: "16 bars: A A′ broad B A", sound: "Woody reed, 3+3+2 bass, pitched metal and machine backbeat" },
   archives: { title: "Margins After Dark", key: "B natural minor", meter: "3/4", form: "16 bars: A A′ low B A", sound: "Triangle nocturne, plucked broken chords, nearly bare percussion" },
   spire: { title: "A Staircase of Stars", key: "D Lydian", meter: "4/4", form: "16 bars: A A′ lyrical B A", sound: "Broad pulse melody, bell staircase, processional drums" },
+  well: { title: "Under the Lantern", bpm: 78, key: "B Dorian", meter: "3/4", form: "16 bars: descending A A′ low flute B A", sound: "Bell descent, sparse flute, lantern pulse; intensity adds upper plucked counterpulse" },
+  warden: { title: "The Well Holds Its Breath", bpm: 126, key: "E Phrygian", meter: "4/4", form: "16 bars: 3+3+2 A A′ broad B A", sound: "Reed challenge, lowered-second harmony, toms; intensity adds upper plucked counterpulse" },
+  rival: { title: "Fen's Overstuffed Atlas", bpm: 132, key: "G Mixolydian", meter: "4/4", form: "16 bars: offbeat A A′ low reed B A", sound: "Swung plucked questions, walking bass, rim/shaker and a woody reply" },
 });
