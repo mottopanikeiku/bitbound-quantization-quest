@@ -51,3 +51,14 @@ test('Records distinguish separate guardian extremes, bond levels, Fen and warde
   assert.ok(f.journal.detailLines(f.journal.entries()[0]).some(line => line.includes('bond level 3')));
   assert.ok(f.journal.detailLines(f.journal.entries().at(-1)).some(line => line.includes('separate from the 21-species')));
 });
+test('Dex discloses cosmetic golden odds before discovery and after a win', () => {
+  const f = fixture(); f.journal.open({ tab: 'dex' });
+  const unseen = f.journal.entries()[0];
+  f.state.progress.dex[unseen.id] = { seen: true, resolved: true, golden: true };
+  for (const entry of [unseen, f.journal.entries()[0]]) {
+    const copy = f.journal.detailLines(entry).join(' ');
+    assert.match(copy, /1 in 32 per specimen per rest visit/);
+    assert.match(copy, /Reloads keep the roll/);
+    assert.match(copy, /Same fight, no extra rewards/);
+  }
+});

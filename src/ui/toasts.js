@@ -13,7 +13,8 @@ export class Toasts {
     if (this.items.length === 1 && kind === 'badge') this.game.announce?.(String(text));
   }
   clear() { this.items = []; }
-  blocked() { return this.game.pauseMenu?.active || this.game.codex?.active || this.game.journal?.active || this.game.dialogue?.active || this.game.lessonCard?.active || this.game.transition; }
+  // Battles own the screen: island banners wait (without ageing) until the fight is over.
+  blocked() { return this.game.scene === this.game.battleScene || this.game.pauseMenu?.active || this.game.codex?.active || this.game.journal?.active || this.game.dialogue?.active || this.game.lessonCard?.active || this.game.transition; }
   update(dt) {
     // Banners wait their turn: drawing after a modal must never obscure its content.
     if (this.blocked()) return;

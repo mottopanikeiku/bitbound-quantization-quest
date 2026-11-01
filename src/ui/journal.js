@@ -12,6 +12,7 @@ import { BADGES, HATS, SPECIES, DUEL_IDS, completion, medalFor, unlockedHats } f
 export const JOURNAL_TABS = Object.freeze(['map', 'dex', 'badges', 'records', 'look']);
 const TITLES = { map: 'Map', dex: 'Dex', badges: 'Badges', records: 'Records', look: 'Look' };
 const LANDMARKS = ['camp', 'stone', 'shrine', 'cache', 'puzzle', 'shard', 'well', 'lighthouse', 'fen'];
+const GOLDEN_DISCLOSURE = 'Golden is cosmetic: 1 in 32 per specimen per rest visit (world), or seeded Well specimen. Reloads keep the roll. Same fight, no extra rewards.';
 const landmarkName = i => i.interaction === 'puzzle' ? 'Snap Bridge' : i.interaction === 'stone' ? 'Grid Stone' : i.interaction === 'shrine' ? `${GUARDIANS[i.zone].name}'s shrine` : i.interaction === 'camp' ? 'Campfire' : i.interaction === 'shard' ? 'Collected shard' : i.interaction === 'well' ? 'Static Well' : i.interaction === 'lighthouse' ? 'Lighthouse' : i.interaction === 'fen' ? 'Fen Float' : 'Snack cache';
 const percent = n => `${(100 * (n ?? 0)).toFixed(1)}%`;
 const zoneName = id => id < 0 ? HUB.name : ZONES[id].name;
@@ -90,8 +91,8 @@ export class Journal {
     if (this.page === 'map') return [`${entry.title}. ${entry.region.id < 0 || state.friends.includes(entry.region.id) ? 'Restored' : 'Still touched by Static'}.`, 'Up and down choose a known landmark. Confirm pins it; it never teleports you.', ...this.landmarks(entry.region).map(i => `${landmarkName(i)}: ${doneLandmark(i, state) ? 'complete' : 'not complete'}.`)];
     if (this.page === 'dex') {
       const e = entry.entry;
-      if (!e?.seen) return ['Unseen silhouette.', 'Discover this specimen on its shore or in the Static Well.'];
-      return ['Staticling species', e.mastered ? 'MASTERED · won with F ≥98.5% on every thread.' : e.resolved ? 'RESOLVED · win recorded.' : 'SEEN · not yet resolved.', ...(entry.species.lines ?? []), `Best ${e.metric} fidelity: ${percent(e.bestFidelity)}`, `Smallest winning packet: ${e.smallestPacket ?? '—'} B`, e.golden ? '★ Golden portrait won · cosmetic only.' : e.goldenSeen ? 'Golden specimen seen; not yet won.' : 'Golden portrait optional · never required.'];
+      if (!e?.seen) return ['Unseen silhouette.', 'Discover this specimen on its shore or in the Static Well.', GOLDEN_DISCLOSURE];
+      return ['Staticling species', e.mastered ? 'MASTERED · won with F ≥98.5% on every thread.' : e.resolved ? 'RESOLVED · win recorded.' : 'SEEN · not yet resolved.', ...(entry.species.lines ?? []), `Best ${e.metric} fidelity: ${percent(e.bestFidelity)}`, `Smallest winning packet: ${e.smallestPacket ?? '—'} B`, e.golden ? '★ Golden portrait won · cosmetic only.' : e.goldenSeen ? 'Golden specimen seen; not yet won.' : 'Golden portrait optional · never required.', GOLDEN_DISCLOSURE];
     }
     if (this.page === 'badges') return [p.badges.includes(entry.id) ? 'STAMP EARNED' : 'STAMP NOT YET EARNED', entry.text, 'Battle conditions settle only on a win. Practice and Well fights count.', 'Stamps are cosmetic: no stat bonus.'];
     if (this.page === 'look') return [state.hat === entry.id ? 'CURRENT LOOK' : entry.id === null || unlockedHats(p).includes(entry.id) ? 'UNLOCKED · confirm to wear' : 'LOCKED', entry.text, 'Hats are expression, not equipment stats.'];

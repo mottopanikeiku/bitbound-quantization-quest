@@ -2,6 +2,7 @@
 // ASCII is terrain, not collision art. Placement coordinates are tile centres.
 import { TERRAIN_TYPES, isWalkable } from '../art/terrain.js';
 import { ZONES } from '../content/game-data.js';
+import { SPECIES } from '../content/static-dex.js';
 import { ZONE_LAYOUTS } from './layouts.js';
 
 export const TILE = 16;
@@ -155,7 +156,7 @@ for (const region of REGIONS) {
   for (let i = 0; i < region.patrols.length; i++) {
     const [x, y] = region.patrols[i];
     tile(region.x + x, region.y + y, ground, z, region.key);
-    STATICLINGS.push({ uid: `${region.key}-static-${i}`, zone: z, ...point(region, x, y), seed: z * 13 + i });
+    STATICLINGS.push({ uid: `${region.key}-static-${i}`, species: SPECIES.filter((entry) => entry.zone === z)[i].id, zone: z, ...point(region, x, y), seed: z * 13 + i });
   }
 }
 
@@ -183,6 +184,16 @@ trail(hub, [[2, 11], [11, 11], [11, 8]], 2);
 trail(hub, [[3, 5], [3, 11]], 1);
 trail(hub, [[21, 15], [23, 15], [23, 17]], 1);
 for (const item of INTERACTABLES.filter((item) => item.zone < 0)) tile(item.tx, item.ty, 'grass', -1, 'point');
+
+// Optional stations on broad camp clearings; Fen has no collision footprint.
+export const FEN_STATIONS = [
+  { zone: 1, id: 'fen-offset', requires: 1, home: [18, 18] },
+  { zone: 4, id: 'fen-hot', requires: 4, home: [5, 21] },
+  { zone: 6, id: 'fen-crown', requires: 6, home: [20, 21] },
+].map(({ zone, id, requires, home }) => {
+  const region = REGIONS.find((entry) => entry.id === zone);
+  return place(region, id, 'npc', ...home, { interaction: 'fen', character: 'fen', requires });
+});
 
 // Only these necks connect shores. Gate cross-sections cover the ENTIRE neck.
 const ROUTES = [

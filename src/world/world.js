@@ -1,19 +1,20 @@
 // World owns motion and presentation; save mutations only go through Game services.
 import { MAP, TILE, REGIONS, PROPS as PLACEMENTS, INTERACTABLES, GATES, BRIDGES, STATICLINGS, ENTRIES, START, LIGHTHOUSE, createMapView } from './map.js';
 import { PUZZLES, SnapBridge } from './puzzles.js';
-import { npcDialogue, signText, stoneText, shrineDialogue, interactionName } from './content.js';
+import { npcDialogue, signText, stoneText, shrineDialogue, interactionName, fenDialogue, GUARDIAN_HOME_LINES } from './content.js';
 import { paintTerrainChunk, drawTerrainAnimated, isWalkable } from '../art/terrain.js';
 import { drawCharacter } from '../art/characters.js';
-import { drawSpirit, drawStaticling } from '../art/creatures.js';
+import { drawSpirit, drawSpecimen } from '../art/creatures.js';
 import { PROPS, drawProp } from '../art/props.js';
 import { createAmbience } from '../art/ambience.js';
 import { medianCutPalette, buildPaletteLUT, bayer, rgbaOf, u32 } from '../art/paint.js';
 import { PAL } from '../art/palette.js';
 import { drawWorldHud } from '../ui/hud.js';
 import { drawWindow, drawKeyCap } from '../ui/kit.js';
-import { drawText, measureText } from '../engine/font.js';
+import { drawText, measureText, wrapText } from '../engine/font.js';
 import { HUB, GUARDIANS, ZONES, heroStats } from '../content/game-data.js';
 import { clamp, approach, hash2, makeCanvas } from '../engine/util.js';
+import { dexEntryOf } from '../content/static-dex.js';
 
 const CHUNK = 16;
 const FACE = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
@@ -35,6 +36,22 @@ const colourDistance = (a, b) => 2 * ((a & 255) - (b & 255)) ** 2 + 4 * (((a >>>
 export function propVisible(item, cx, cy, width, height) {
   const d = item.kind === 'npc' ? { w: 24, h: 28, ax: 11, ay: 26 } : PROPS[item.kind];
   return d && item.x - d.ax < cx + width && item.x - d.ax + d.w > cx && item.y - d.ay < cy + height && item.y - d.ay + d.h > cy;
+}
+
+/** A saved visit and stable uid determine the cosmetic 1-in-32 roll. */
+export function specimenGolden(restCount, uid) {
+  let word = 2166136261;
+  for (let i = 0; i < uid.length; i++) word = Math.imul(word ^ uid.charCodeAt(i), 16777619);
+  word ^= Math.max(0, Math.floor(restCount ?? 0));
+  word = Math.imul(word ^ word >>> 16, 0x7feb352d);
+  word = Math.imul(word ^ word >>> 15, 0x846ca68b);
+  return ((word ^ word >>> 16) & 31) === 0;
+}
+
+export function campReachable(state, camp) {
+  if (!camp || camp.interaction !== 'camp' || !state.camps?.includes(camp.id)) return false;
+  for (let zone = 0; zone < camp.zone; zone++) if (!state.friends.includes(zone)) return false;
+  return true;
 }
 
 function rampTransition(a, middle, b) {
@@ -84,7 +101,7 @@ export class World {
     this.cameraSnap = true;
     this.shrines = shrineItems;
     this.camp = campItems.find((item) => item.id === 'point-camp');
-    this.statics = STATICLINGS.map((item) => ({ ...item, homeX: item.x, homeY: item.y, alive: true, lifecycle: 'DORMANT', mood: 'sleeping', clock: item.seed * 0.13, alertTime: 0, dir: 'down', disengaged: false, purifyUntil: 0 }));
+    this.statics = STATICLINGS.map((item) => ({ ...item, id: item.uid, interaction: 'specimen', name: dexEntryOf(item.species).name, golden: specimenGolden(game.state.restCount, item.uid), seenVisit: null, homeX: item.x, homeY: item.y, alive: true, lifecycle: 'DORMANT', mood: 'sleeping', clock: item.seed * 0.13, alertTime: 0, dir: 'down', disengaged: false, purifyUntil: 0 }));
     this.contactCooldown = 2.5;
     this.solved = new Set();
     this.restored = new Set();
@@ -105,6 +122,19 @@ export class World {
     this.renderList = [];
     this.puzzle = null;
     this.nearby = null;
+    this.panel = null;
+    this.marks = Array.from({ length: 24 }, () => ({ life: 0 }));
+    this.effects = Array.from({ length: 12 }, () => ({ life: 0 }));
+    this.markCursor = 0;
+    this.effectCursor = 0;
+    this.brushClock = 0;
+    this.lastWet = false;
+    this.gestureUntil = 0;
+    this.gestureCamp = null;
+    this.shrineGreetings = new Map();
+    this.navigation = null;
+    this.routeQueue = new Int32Array(MAP.width * MAP.height);
+    this.routePrevious = new Int32Array(MAP.width * MAP.height);
     this.lastWidth = 0;
     this.lastHeight = 0;
     this.worldLayer = null;
@@ -119,9 +149,10 @@ export class World {
     this._resetTrail();
   }
 
-  get canPause() { return this.puzzle === null && this.pendingStone === null; }
+  get canPause() { return this.puzzle === null && this.pendingStone === null && this.panel === null; }
 
   setState(state) {
+    this.navigation = null;
     const position = state.position ?? this.hero;
     this.solved = new Set(state.puzzles);
     this.map = createMapView(this.solved);
@@ -143,6 +174,7 @@ export class World {
     this.gateOpen = new Set(GATES.filter((gate) => state.friends.includes(gate.requires)).map((gate) => gate.id));
     for (const enemy of this.statics) {
       this._syncPatrol(enemy);
+      enemy.golden = specimenGolden(state.restCount, enemy.uid);
       enemy.alive = enemy.lifecycle !== 'PURIFIED' && !this.game.hasFlag(clearFlag(enemy));
     }
     this._syncFollowers();
@@ -156,6 +188,7 @@ export class World {
   }
 
   devPlace(zoneId) {
+    this.navigation = null;
     const entry = ENTRIES[zoneId] ?? START;
     this.hero.x = entry.x;
     this.hero.y = entry.y;
@@ -166,7 +199,9 @@ export class World {
     this._resetTrail();
   }
 
-  objective() {
+  _objectiveTarget() {
+    const pin = INTERACTABLES.find((item) => item.id === this.game.state.pin);
+    if (pin && this._knownLandmark(pin) && !this._landmarkComplete(pin)) return { text: `Pin: ${interactionName(pin, this.game.state)}`, x: pin.x, y: pin.y };
     const next = ZONES.find((zone) => !this.game.state.friends.includes(zone.id));
     if (this.pendingStone) {
       const zone = this.pendingStone.zone, bits = ZONES[zone].corruptBits;
@@ -183,6 +218,88 @@ export class World {
     }
     const shrine = this.shrines[next.id];
     return { text: `Befriend ${GUARDIANS[next.id].name} at the shrine`, x: shrine.x, y: shrine.y };
+  }
+
+  /** Landmark coordinates stay authoritative; the HUD follows a cached walkable opening. */
+  objective() {
+    const target = this._objectiveTarget();
+    if (!target || this.pendingStone || Math.hypot(target.x - this.hero.x, target.y - this.hero.y) < 42) return target;
+    const version = this.game.state.friends.length + this.solved.size * 8;
+    let nav = this.navigation;
+    if (!nav || nav.x !== target.x || nav.y !== target.y || nav.version !== version) nav = this._routeTo(target, version);
+    if (!nav?.path.length) return target;
+    let nearest = 0, distance = Infinity;
+    for (let i = 0; i < nav.path.length; i++) {
+      const point = nav.path[i], d = (point.x - this.hero.x) ** 2 + (point.y - this.hero.y) ** 2;
+      if (d < distance) { nearest = i; distance = d; }
+    }
+    if (distance > 36 ** 2) {
+      nav = this._routeTo(target, version);
+      nearest = 0;
+    }
+    if (!nav?.path.length) return target;
+    let end = Math.min(nav.path.length - 1, nearest + 1);
+    const dx = nav.path[end].x - nav.path[nearest].x, dy = nav.path[end].y - nav.path[nearest].y;
+    while (end + 1 < nav.path.length && nav.path[end + 1].x - nav.path[end].x === dx && nav.path[end + 1].y - nav.path[end].y === dy) end++;
+    while (end > nearest && !this._lineOpen(this.hero.x, this.hero.y, nav.path[end].x, nav.path[end].y)) end--;
+    const point = nav.path[end];
+    return { ...target, waypoint: point };
+  }
+
+  _lineOpen(ax, ay, bx, by) {
+    const steps = Math.ceil(Math.hypot(bx - ax, by - ay) / 4);
+    for (let step = 1; step <= steps; step++) if (!this._walkable(ax + (bx - ax) * step / steps, ay + (by - ay) * step / steps)) return false;
+    return true;
+  }
+
+  _routeTo(target, version) {
+    const width = MAP.width, height = MAP.height, previous = this.routePrevious, queue = this.routeQueue;
+    previous.fill(-2);
+    let start = -1, best = Infinity;
+    const tx = Math.floor(this.hero.x / TILE), ty = Math.floor(this.hero.y / TILE);
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      const x = tx + dx, y = ty + dy, px = x * TILE + 8, py = y * TILE + 8;
+      const distance = (px - this.hero.x) ** 2 + (py - this.hero.y) ** 2;
+      if (x >= 0 && y >= 0 && x < width && y < height && distance < best && this._walkable(px, py) && this._lineOpen(this.hero.x, this.hero.y, px, py)) { start = y * width + x; best = distance; }
+    }
+    const path = [];
+    if (start >= 0) {
+      queue[0] = start; previous[start] = -1;
+      let size = 1, end = -1;
+      for (let at = 0; at < size; at++) {
+        const cell = queue[at], x = cell % width, y = Math.floor(cell / width);
+        if (Math.hypot(x * TILE + 8 - target.x, y * TILE + 8 - target.y) <= 28) { end = cell; break; }
+        for (let side = 0; side < 4; side++) {
+          const nx = x + (side === 0 ? 1 : side === 1 ? -1 : 0), ny = y + (side === 2 ? 1 : side === 3 ? -1 : 0);
+          const next = ny * width + nx;
+          if (nx < 0 || ny < 0 || nx >= width || ny >= height || previous[next] !== -2) continue;
+          previous[next] = -3;
+          if (!this._walkable(nx * TILE + 8, ny * TILE + 8)) continue;
+          previous[next] = cell;
+          queue[size++] = next;
+        }
+      }
+      for (let cell = end; cell >= 0; cell = previous[cell]) path.push({ x: cell % width * TILE + 8, y: Math.floor(cell / width) * TILE + 8 });
+      path.reverse();
+    }
+    this.navigation = { x: target.x, y: target.y, version, path };
+    return this.navigation;
+  }
+
+  _knownLandmark(item) {
+    if (item.interaction === 'shard') return false;
+    const next = ZONES.find((zone) => !this.game.state.friends.includes(zone.id))?.id ?? 7;
+    return item.zone < 0 || item.zone <= next || item.zone === this.position.zone;
+  }
+
+  _landmarkComplete(item) {
+    const state = this.game.state;
+    return item.interaction === 'cache' ? state.caches.includes(item.id)
+      : item.interaction === 'puzzle' ? this.solved.has(item.id)
+      : item.interaction === 'camp' ? state.camps?.includes(item.id)
+      : item.interaction === 'stone' ? this._stoneAwake(item.zone)
+      : item.interaction === 'shrine' ? this.restored.has(item.zone) || state.friends.includes(item.zone)
+      : true;
   }
 
   _stoneAwake(zone) {
@@ -221,6 +338,8 @@ export class World {
       this.game.audio.play('gate');
     }
     this._syncFollowers();
+    this._gesture();
+    this._effect('restore', shrine.x, shrine.y, 2.2, zoneId);
   }
 
   _patrolLifecycle(zone) {
@@ -244,6 +363,7 @@ export class World {
     if (lifecycle === 'PURIFIED') {
       enemy.mood = 'purified';
       if (visible) enemy.purifyUntil = this.game.time + 0.8;
+      this._resetPatrol(enemy);
     } else this._resetPatrol(enemy);
   }
 
@@ -253,6 +373,8 @@ export class World {
 
   respawnStaticlings() {
     for (const enemy of this.statics) {
+      enemy.golden = specimenGolden(this.game.state.restCount, enemy.uid);
+      enemy.seenVisit = null;
       this._syncPatrol(enemy);
       if (enemy.lifecycle !== 'ACTIVE') continue;
       // One reversible flag per patrol keeps repeated rest/Continue saves bounded.
@@ -285,12 +407,28 @@ export class World {
   }
 
   returnToCamp(campId) {
-    const camp = campItems.find((item) => item.id === campId) ?? this.camp;
+    this.navigation = null;
+    const requested = campItems.find((item) => item.id === campId);
+    const camp = campReachable(this.game.state, requested) ? requested : campItems.find((item) => item.id === this.game.state.camp && campReachable(this.game.state, item)) ?? this.camp;
     this.hero.x = camp.x + 20;
     this.hero.y = camp.y + 16;
+    if (!this._walkable(this.hero.x, this.hero.y)) {
+      let best = Infinity;
+      for (let dy = -32; dy <= 32; dy += 4) for (let dx = -32; dx <= 32; dx += 4) {
+        const distance = (dx - 20) ** 2 + (dy - 16) ** 2;
+        if (distance < best && this._walkable(camp.x + dx, camp.y + dy)) {
+          best = distance;
+          this.hero.x = camp.x + dx;
+          this.hero.y = camp.y + dy;
+        }
+      }
+    }
     this.hero.facing = 'down';
     this.hero.vx = this.hero.vy = 0;
     this.cameraSnap = true;
+    this.panel = null;
+    this.hero.moving = false;
+    this.marks.forEach((mark) => { mark.life = 0; });
     this.contactCooldown = 4;
     this._resetTrail();
   }
@@ -308,7 +446,7 @@ export class World {
       for (const [tx, ty] of gate.cells) if (right >= tx * TILE && left < (tx + 1) * TILE && bottom >= ty * TILE && top < (ty + 1) * TILE) return false;
     }
     for (const item of PLACEMENTS) {
-      if (item.interaction === 'shard' || item.kind === 'stone-float') continue;
+      if (item.interaction === 'fen' || item.interaction === 'shard' || item.kind === 'stone-float') continue;
       const solid = item.kind === 'npc' ? [-5, -5, 10, 7] : PROPS[item.kind]?.solid;
       if (!solid) continue;
       const [sx, sy, sw, sh] = solid;
@@ -412,12 +550,13 @@ export class World {
     }
     for (let i = 0; i < this.followers.length; i++) {
       const friend = this.followers[i];
-      const target = this.trail[Math.min(this.trail.length - 1, (i + 1) * 6)];
+      const atCamp = this.gestureCamp && this.game.time < this.gestureUntil;
+      const target = atCamp ? { x: this.gestureCamp.x + (i % 2 ? 20 : -20), y: this.gestureCamp.y + 10 + Math.floor(i / 2) * 16, dir: 'up' } : this.trail[Math.min(this.trail.length - 1, (i + 1) * 6)];
       const dx = target.x - friend.x;
       const dy = target.y - friend.y;
       friend.moving = Math.hypot(dx, dy) > 1.5;
       if (friend.moving) friend.dir = direction(dx, dy);
-      const follow = 1 - Math.exp(-dt * 11);
+      const follow = atCamp && this.game.reducedMotion ? 1 : 1 - Math.exp(-dt * 11);
       friend.x += dx * follow;
       friend.y += dy * follow;
     }
@@ -428,6 +567,11 @@ export class World {
     const heroSafe = this._safeAt(this.hero.x, this.hero.y, zone);
     for (const enemy of this.statics) {
       this._syncPatrol(enemy);
+      if ((enemy.alive || enemy.lifecycle === 'PURIFIED') && enemy.lifecycle !== 'DORMANT' && Math.hypot(enemy.x - this.hero.x, enemy.y - this.hero.y) <= 96 && enemy.x >= this.camera.x - 12 && enemy.x <= this.camera.x + this.game.screen.w + 12 && enemy.y >= this.camera.y - 24 && enemy.y <= this.camera.y + this.game.screen.h + 24 && enemy.seenVisit !== (this.game.state.restCount ?? 0)) {
+        enemy.seenVisit = this.game.state.restCount ?? 0;
+        this.game.emit?.('seen', { species: enemy.species, golden: enemy.golden });
+        this.game.audio.play('seen');
+      }
       if (!enemy.alive || enemy.lifecycle !== 'ACTIVE' || Math.abs(enemy.x - this.hero.x) > 360 || Math.abs(enemy.y - this.hero.y) > 320) continue;
       enemy.clock += dt;
       const dx = this.hero.x - enemy.x, dy = this.hero.y - enemy.y;
@@ -472,7 +616,7 @@ export class World {
       if (distance < 13 && canPursue && (enemy.mood === 'chase' || enemy.mood === 'alert')) {
         this.contactCooldown = 3;
         this.hero.vx = this.hero.vy = 0;
-        this.game.startBattle({ foeId: `static-${enemy.zone}`, guardian: false, uid: enemy.uid, zone: enemy.zone });
+        this.game.startBattle({ foeId: `static-${enemy.zone}`, species: enemy.species, guardian: false, uid: enemy.uid, zone: enemy.zone, golden: enemy.golden });
         return true;
       }
     }
@@ -484,6 +628,7 @@ export class World {
     let best = null;
     let score = Infinity;
     for (const item of INTERACTABLES) {
+      if (item.interaction === 'fen' && !this.game.state.friends.includes(item.requires)) continue;
       if (item.interaction === 'shard' && (this.game.state.shards.includes(item.id) || (item.puzzle && !this.solved.has(item.puzzle)))) continue;
       if (item.interaction === 'cache' && this.game.state.caches.includes(item.id)) continue;
       const dx = item.x - this.hero.x;
@@ -495,6 +640,15 @@ export class World {
       if (distance > 16 && dot < -0.35) continue;
       const candidateScore = distance - dot * 8;
       if (candidateScore < score) { best = item; score = candidateScore; }
+    }
+    for (const enemy of this.statics) {
+      if (enemy.lifecycle !== 'PURIFIED') continue;
+      const distance = Math.hypot(enemy.x - this.hero.x, enemy.y - this.hero.y);
+      const dot = distance ? ((enemy.x - this.hero.x) * fx + (enemy.y - this.hero.y) * fy) / distance : 1;
+      if (distance <= 28 && (distance <= 16 || dot >= -0.35) && distance - dot * 8 < score) {
+        best = enemy;
+        score = distance - dot * 8;
+      }
     }
     return best;
   }
@@ -513,20 +667,47 @@ export class World {
       game.say(npcDialogue(item, game.state, first, game.input?.lastDevice === 'touch'));
       game.save();
     } else if (item.interaction === 'sign') game.say(signText(item.zone, game.input?.lastDevice === 'touch'));
-    else if (item.interaction === 'camp') game.restAtCamp(item.id);
-    else if (item.interaction === 'cache') game.openCache(item.id);
-    else if (item.interaction === 'shard') game.collectShard(item.id);
+    else if (item.interaction === 'camp') {
+      game.restAtCamp(item.id);
+      this._gesture(item);
+      this._effect('warm', item.x, item.y, 0.35);
+      this._openPanel('Campfire', ['Stay', 'Travel', 'Leave'], (choice) => {
+        if (choice === 1) this._travelPanel(item);
+      }, 'Rested & refilled. Stay awhile.');
+    } else if (item.interaction === 'cache') {
+      const before = { ...game.state.hero };
+      game.openCache(item.id);
+      const snacks = game.state.hero.snacks - before.snacks, bytes = game.state.hero.bytes - before.bytes;
+      this._effect('cache', item.x, item.y, 0.8, `+${snacks} snack  +${bytes} B`);
+    } else if (item.interaction === 'shard') {
+      game.collectShard(item.id);
+      this._effect('shard', item.x, item.y, 0.81);
+    } else if (item.interaction === 'specimen') {
+      this._openPanel(item.name, ['Practise', 'Leave'], (choice) => {
+        if (choice === 0) game.startBattle({ mode: 'practice', foeId: `static-${item.zone}`, species: item.species, zone: item.zone, golden: item.golden });
+      }, 'A friendly sanctuary. No island supplies change.');
+    } else if (item.interaction === 'fen') {
+      this._openPanel('Fen Float', ['Talk', 'Duel', 'Later'], (choice) => {
+        if (choice === 0) game.say(fenDialogue(item.id, game.state));
+        if (choice === 1) game.startRivalDuel(item.id);
+      }, game.state.rival?.won?.includes(item.id) ? 'My shoulders still thank you. Rematch?' : 'An atlas, a scarf, a friendly challenge.');
+    }
     else if (item.interaction === 'stone') {
       if (this._stoneAwake(item.zone)) game.say([stoneText(item.zone), `The stone is awake. Its guardian shrine is unsealed. ${game.input?.lastDevice === 'touch' ? 'START → Field Notes' : 'N opens your Field Notes'} to review the technique.`]);
       else game.say([stoneText(item.zone)], { onDone: () => this.awakenStone(item.zone) });
     } else if (item.interaction === 'shrine') {
-      if (game.state.friends.includes(item.zone)) game.say({ speaker: GUARDIANS[item.zone].name, portrait: GUARDIANS[item.zone].key, text: 'A little more colour. A little less lonely. Thanks for finding me.' });
+      if (this.restored.has(item.zone) || game.state.friends.includes(item.zone)) {
+        this.shrineGreetings.set(item.zone, this.game.time + 0.5);
+        this._openPanel(`${GUARDIANS[item.zone].name}'s shrine`, ['Rematch', 'Leave'], (choice) => {
+          if (choice === 0) game.startBattle({ mode: 'practice', foeId: GUARDIANS[item.zone].key, guardian: true, zone: item.zone });
+        }, `${GUARDIAN_HOME_LINES[item.zone]} Rematches keep island supplies safe.`);
+      }
       else if (item.zone > 0 && !game.state.friends.includes(item.zone - 1)) game.say('The Static seal is still strong. Help the earlier guardians first.');
       else if (!this._stoneAwake(item.zone)) game.say('The shrine is sealed. Wake this zone’s glowing Grid Stone first.');
       else game.say(shrineDialogue(item.zone), { onDone: () => game.startBattle({ foeId: GUARDIANS[item.zone].key, guardian: true, uid: item.id, zone: item.zone }) });
     } else if (item.interaction === 'well') {
-      if (game.state.friends.length) game.enterWell();
-      else game.say('Static hums far below the old well. Befriend a guardian before you climb down.');
+      if (game.state.friends.length >= 2) game.enterWell();
+      else game.say('Static hums far below. Bring two friends, and we can explore together. The well will wait.');
     } else if (item.interaction === 'lighthouse') {
       if (game.hasFlag('ending-seen')) game.say({ speaker: 'The Oracle', portrait: 'oracle', text: 'A smaller satchel. A larger circle of friends. Thank you for bringing me home.' });
       else if (game.state.friends.length === 7) game.playEnding();
@@ -537,6 +718,7 @@ export class World {
         this.puzzle = new SnapBridge(game, PUZZLES[item.zone], {
           onSolve: () => {
             this.solved.add(item.id);
+            this._gesture();
             for (const cell of BRIDGES[item.zone].cells) this.chunks.delete(`${Math.floor(cell.tx / CHUNK)},${Math.floor(cell.ty / CHUNK)}`);
           },
           onClose: () => {
@@ -545,6 +727,220 @@ export class World {
             if (this.solved.has(item.id)) game.toast('SNAP! The crossing is steady. Reach the bit shard.', { kind: 'reward', ms: 3000 });
           },
         });
+      }
+    }
+  }
+
+  afterDuel(id, outcome) {
+    this.contactCooldown = 4;
+    this.game.say(fenDialogue(id, this.game.state, outcome));
+  }
+
+  _openPanel(title, options, choose, note = '') {
+    this.hero.vx = this.hero.vy = 0;
+    this.hero.moving = false;
+    const width = this._panelWidth(this.game.screen);
+    this.panel = { title, options, choose, note, selected: 0, width, lines: wrapText(note, width - 20, 'small') };
+    this.game.announce?.(this.describe());
+  }
+
+  _travelPanel(current) {
+    if (!this.game.state.friends.includes(0)) {
+      this.game.say('Nib knows the hearth paths. Befriend them first; every camp you rest at will remember you.');
+      return;
+    }
+    const camps = campItems.filter((camp) => camp.id !== current.id && campReachable(this.game.state, camp));
+    this._openPanel('Travel to a rested camp', [...camps.map((camp) => camp.zone < 0 ? HUB.name : ZONES[camp.zone].name), 'Back'], (choice) => {
+      if (choice < camps.length && campReachable(this.game.state, camps[choice])) this.game.travelTo(camps[choice].id);
+      else this._openPanel('Campfire', ['Stay', 'Travel', 'Leave'], (index) => { if (index === 1) this._travelPanel(current); }, 'Rested & refilled. Stay awhile.');
+    }, camps.length ? 'Only rested hearths. No extra rest on arrival.' : 'Rest at another camp to make a hearth path.');
+  }
+
+  _updatePanel(input) {
+    if (input.pressed('cancel')) {
+      input.consume('cancel');
+      input.consume('pause');
+      this.panel = null;
+      this.contactCooldown = Math.max(this.contactCooldown, 2);
+      return;
+    }
+    const panel = this.panel;
+    const repeat = (key) => input.repeat ? input.repeat(key) : input.pressed(key);
+    const move = repeat('down') || repeat('right') ? 1 : repeat('up') || repeat('left') ? -1 : 0;
+    if (move) {
+      panel.selected = (panel.selected + move + panel.options.length) % panel.options.length;
+      this.game.audio.play('select');
+      this.game.announce?.(`${panel.title}. ${panel.options[panel.selected]}.`);
+    }
+    if (input.pressed('confirm')) {
+      input.consume('confirm');
+      this.panel = null;
+      this.contactCooldown = Math.max(this.contactCooldown, 2);
+      panel.choose(panel.selected);
+    }
+  }
+
+  _panelWidth(screen) {
+    return screen.portrait ? Math.min(316, screen.w - 20) : Math.min(216, Math.floor(screen.w * 0.45));
+  }
+
+  _drawPanel(ctx, screen, t) {
+    const panel = this.panel;
+    if (!panel) return;
+    const width = this._panelWidth(screen), shown = Math.min(5, panel.options.length);
+    if (width !== panel.width) {
+      panel.width = width;
+      panel.lines = wrapText(panel.note, width - 20, 'small');
+    }
+    const height = 62 + panel.lines.length * 10 + shown * 18;
+    const x = screen.portrait ? Math.floor((screen.w - width) / 2) : 8;
+    const y = screen.portrait ? screen.h - height - 12 : Math.floor((screen.h - height) / 2);
+    drawWindow(ctx, x, y, width, height, 'dialog', t);
+    drawText(ctx, panel.title, x + 10, y + 10, { color: PAL.ui.text });
+    panel.lines.forEach((line, i) => drawText(ctx, line, x + 10, y + 25 + i * 10, { font: 'small', color: PAL.ui.dim }));
+    const start = Math.min(Math.max(0, panel.selected - shown + 1), panel.options.length - shown);
+    for (let row = 0; row < shown; row++) {
+      const index = start + row, top = y + 30 + panel.lines.length * 10 + row * 18;
+      if (index === panel.selected) {
+        ctx.fillStyle = PAL.teal[1];
+        ctx.fillRect(x + 6, top - 3, width - 12, 16);
+      }
+      drawText(ctx, `${index === panel.selected ? '>' : ' '} ${panel.options[index]}`, x + 10, top, { color: index === panel.selected ? PAL.cream[3] : PAL.ui.text });
+    }
+    const touch = this.game.input?.lastDevice === 'touch';
+    drawText(ctx, touch ? 'D-pad choose · A confirm' : 'Arrows choose · Enter confirm', x + 10, y + height - 25, { font: 'small', color: PAL.ui.dim });
+    drawText(ctx, touch ? 'B leave' : 'Esc leave', x + 10, y + height - 13, { font: 'small', color: PAL.ui.dim });
+  }
+
+  _gesture(camp = null) {
+    this._syncFollowers();
+    this.gestureUntil = this.game.time + 0.5;
+    this.gestureCamp = camp;
+  }
+
+  _effect(kind, x, y, life, data = null) {
+    const effect = this.effects[this.effectCursor++ % this.effects.length];
+    Object.assign(effect, { kind, x, y, life, duration: life, data });
+  }
+
+  _mark(kind, x, y, life, variant = 0) {
+    const mark = this.marks[this.markCursor++ % this.marks.length];
+    Object.assign(mark, { kind, x, y, life, duration: life, variant });
+  }
+
+  _updateJuice(dt) {
+    for (const mark of this.marks) mark.life = Math.max(0, mark.life - dt);
+    for (const effect of this.effects) effect.life = Math.max(0, effect.life - dt);
+    this.brushClock = Math.max(0, this.brushClock - dt);
+  }
+
+  _brush(distance) {
+    const tx = Math.floor(this.hero.x / TILE), ty = Math.floor(this.hero.y / TILE);
+    const terrain = this.map.get(tx, ty);
+    if (this.stepDistance >= 12 && ['snow', 'ash'].includes(terrain)) this._mark('foot', this.hero.x, this.hero.y, 2, this.hero.facing);
+    const wet = terrain === 'sand' && [[-1, 0], [1, 0], [0, -1], [0, 1]].some(([dx, dy]) => ['water', 'deep'].includes(this.map.get(tx + dx, ty + dy)));
+    if (wet && !this.lastWet) for (let i = 0; i < 4; i++) this._mark('ripple', this.hero.x + (i % 2 ? 5 : -5), this.hero.y + (i < 2 ? -3 : 3), 0.6, i);
+    this.lastWet = wet;
+    if (this.brushClock > 0 || distance <= 0) return;
+    this.brushClock = 0.2;
+    for (let y = ty - 1; y <= ty + 1; y++) for (let x = tx - 1; x <= tx + 1; x++) {
+      const kind = this.map.get(x, y), px = x * TILE + 8, py = y * TILE + 8;
+      if (!['grass', 'tallgrass', 'flowers'].includes(kind) || Math.hypot(px - this.hero.x, py - this.hero.y) > 12) continue;
+      this._mark('brush', px, py, 0.25, kind === 'flowers' ? 1 : 0);
+      this.game.audio.play('rustle');
+    }
+  }
+
+  _glint(ctx, x, y, t) {
+    const shift = Math.round(Math.sin(t * 3));
+    ctx.fillStyle = PAL.gold[6];
+    ctx.fillRect(x - 2, y + shift, 5, 1);
+    ctx.fillRect(x, y - 2 + shift, 1, 5);
+    ctx.fillStyle = PAL.cream[3];
+    ctx.fillRect(x, y + shift, 1, 1);
+  }
+
+  _drawWell(ctx, x, y, t) {
+    ctx.fillStyle = PAL.teal[5];
+    for (let i = 0; i < 6; i++) {
+      const angle = i * Math.PI / 3 + (this.game.reducedMotion ? 0 : t);
+      ctx.fillRect(x + Math.round(Math.cos(angle) * 7), y - 12 + Math.round(Math.sin(angle) * 3), 2, 1);
+    }
+    this._glint(ctx, x + 10, y - 19, this.game.reducedMotion ? 0 : t);
+  }
+
+  _drawMarks(ctx, cx, cy) {
+    for (const mark of this.marks) {
+      if (mark.life <= 0) continue;
+      const x = Math.round(mark.x - cx), y = Math.round(mark.y - cy), age = mark.duration - mark.life;
+      if (mark.kind === 'foot') {
+        ctx.fillStyle = mark.life > 1 ? PAL.stone[2] : PAL.stone[3];
+        const horizontal = ['left', 'right'].includes(mark.variant);
+        ctx.fillRect(x - 3, y - 1, horizontal ? 3 : 2, horizontal ? 2 : 3);
+        ctx.fillRect(x + 2, y + 2, horizontal ? 3 : 2, horizontal ? 2 : 3);
+      } else if (mark.kind === 'ripple') {
+        const radius = this.game.reducedMotion ? 4 : 2 + Math.round(age * 8);
+        ctx.fillStyle = PAL.water[5];
+        ctx.fillRect(x - radius, y - 2, radius * 2, 1);
+        ctx.fillRect(x - radius + 1, y + 2, radius * 2 - 2, 1);
+      } else {
+        const sway = this.game.reducedMotion ? 0 : Math.round(Math.sin(age / mark.duration * Math.PI * 2) * 2);
+        ctx.fillStyle = PAL.grass[4];
+        ctx.fillRect(x - 3 + sway, y - 3, 1, 4);
+        ctx.fillRect(x + 2 + sway, y - 2, 1, 3);
+        if (mark.variant) {
+          ctx.fillStyle = PAL.rose[4];
+          ctx.fillRect(x - 4 + sway, y - 4, 3, 2);
+        }
+      }
+    }
+  }
+
+  _drawEffects(ctx, cx, cy) {
+    for (const effect of this.effects) {
+      if (effect.life <= 0) continue;
+      const age = effect.duration - effect.life, reduced = this.game.reducedMotion;
+      const x = Math.round(effect.x - cx), y = Math.round(effect.y - cy);
+      const hx = Math.round(this.hero.x - cx), hy = Math.round(this.hero.y - cy);
+      if (effect.kind === 'cache') {
+        drawText(ctx, effect.data, clamp(x - measureText(effect.data, 'small') / 2, 4, this.game.screen.w - measureText(effect.data, 'small') - 4), y - 30 - (reduced ? 0 : Math.round(age * 4)), { font: 'small', color: PAL.gold[6], shadow: PAL.ink });
+        this._glint(ctx, hx + 8, hy - 18, 0);
+      } else if (effect.kind === 'shard') {
+        if (reduced) {
+          this._glint(ctx, hx + 8, hy - 20, 0);
+          drawText(ctx, '+1 shard', hx - 20, hy - 33, { font: 'small', color: PAL.gold[6], shadow: PAL.ink });
+        } else if (age < 0.36) {
+          const p = clamp((age - 0.12) / 0.24);
+          for (let i = 0; i < 8; i++) {
+            const angle = i * Math.PI / 4;
+            const sx = Math.round((x + Math.cos(angle) * 10) * (1 - p) + hx * p);
+            const sy = Math.round((y - 8 + Math.sin(angle) * 8) * (1 - p) + (hy - 12) * p);
+            ctx.fillStyle = PAL.gold[6];
+            ctx.fillRect(sx, sy, 2, 2);
+          }
+        } else {
+          this._glint(ctx, hx + 8, hy - 20, 0);
+          drawText(ctx, '+1 shard', hx - 20, hy - 33, { font: 'small', color: PAL.gold[6], shadow: PAL.ink });
+        }
+      } else if (effect.kind === 'warm') {
+        const r = reduced ? 18 : 10 + Math.round(age / effect.duration * 14);
+        ctx.fillStyle = PAL.ember[5];
+        ctx.fillRect(x - r, y - 6, r * 2, 1);
+        ctx.fillRect(x - r, y + 7, r * 2, 1);
+        ctx.fillRect(x - r - 2, y - 4, 1, 9);
+        ctx.fillRect(x + r + 1, y - 4, 1, 9);
+      } else if (effect.kind === 'restore') {
+        const wave = this.restorations.get(effect.data);
+        for (let i = 0; i < 3; i++) {
+          const px = effect.x + (i - 1) * 22, py = effect.y + 22;
+          if (!reduced && wave && Math.hypot(px - wave.x, py - wave.y) > age / effect.duration * wave.radius) continue;
+          const sx = Math.round(px - cx), sy = Math.round(py - cy);
+          ctx.fillStyle = PAL.grass[4];
+          ctx.fillRect(sx, sy - 5, 1, 6);
+          ctx.fillStyle = PAL.gold[5];
+          ctx.fillRect(sx - 2, sy - 7, 5, 3);
+          this._glint(ctx, sx + 5, sy - 10, 0);
+        }
       }
     }
   }
@@ -571,6 +967,12 @@ export class World {
   update(dt, input) {
     const screen = this.game.screen;
     this.contactCooldown = Math.max(0, this.contactCooldown - dt);
+    this._updateJuice(dt);
+    if (this.panel) {
+      this._updatePanel(input);
+      this._updateFollowers(dt);
+      return;
+    }
     if (this.pendingStone) {
       this._updateCamera(dt, screen);
       if (this.game.time >= this.pendingStone.ready) {
@@ -602,6 +1004,7 @@ export class World {
     this.hero.moving = distance > 0.08;
     this.hero.step += distance / 7;
     this.stepDistance += distance;
+    if (this.hero.moving) this._brush(distance);
     if (this.stepDistance > (this.game.reducedMotion ? 24 : 13)) {
       this.stepDistance = 0;
       if (this.dust.length < 12) this.dust.push({ x: this.hero.x, y: this.hero.y, life: 0.3 });
@@ -662,10 +1065,11 @@ export class World {
 
   _heroSilhouette() {
     const dir = this.hero.facing;
-    let canvas = this.heroSilhouettes.get(dir);
+    const key = `${dir}:${this.game.state.hat ?? ''}`;
+    let canvas = this.heroSilhouettes.get(key);
     if (canvas) return canvas;
     const surface = makeCanvas(32, 36);
-    drawCharacter(surface.ctx, 'hero', 16, 30, { dir, frame: -1, t: 1 });
+    drawCharacter(surface.ctx, 'hero', 16, 30, { dir, frame: -1, t: 1, hat: this.game.state.hat });
     const image = surface.ctx.getImageData(0, 0, 32, 36);
     const source = new Uint32Array(image.data.buffer);
     const alpha = Uint8Array.from(source, (word, i) => i < 30 * 32 && word >>> 24 > 127 ? 1 : 0);
@@ -676,7 +1080,7 @@ export class World {
     }
     surface.ctx.putImageData(image, 0, 0);
     canvas = surface.canvas;
-    this.heroSilhouettes.set(dir, canvas);
+    this.heroSilhouettes.set(key, canvas);
     return canvas;
   }
 
@@ -711,14 +1115,25 @@ export class World {
     const list = this.renderList;
     list.length = 0;
     for (const item of sortedProps) {
-      if (!propVisible(item, cx, cy, width, height)) continue;
+      if (item.interaction === 'fen' && !this.game.state.friends.includes(item.requires) || !propVisible(item, cx, cy, width, height)) continue;
       if (item.interaction === 'shard' && this.game.state.shards.includes(item.id)) continue;
       if (PROPS[item.kind]?.ground) {
         drawProp(ctx, item.kind, Math.round(item.x - cx), Math.round(item.y - cy), { t, biome: item.biome, variant: item.variant ?? item.zone + 1, reduced: this.game.reducedMotion });
+        if (item.kind === 'terrace-stairs') {
+          const x = Math.round(item.x - cx), y = Math.round(item.y - cy);
+          ctx.fillStyle = PAL.stone[0];
+          ctx.fillRect(x - 11, y + 2, 4, 3);
+          ctx.fillRect(x + 7, y + 2, 4, 3);
+          ctx.fillStyle = PAL.gold[6];
+          ctx.fillRect(x - 10, y + 2, 2, 1);
+          ctx.fillRect(x + 8, y + 2, 2, 1);
+          ctx.fillStyle = PAL.snow[4];
+          ctx.fillRect(x - 9, y - 21, 18, 1);
+        }
         continue;
       }
       list.push({ type: 'prop', y: item.y, item });
-      if (item.interaction === 'shrine' && !this.restored.has(item.zone)) list.push({ type: 'guardian', y: item.y + 13, item });
+      if (item.interaction === 'shrine' && (!this.restored.has(item.zone) || (this.shrineGreetings.get(item.zone) ?? 0) > this.game.time)) list.push({ type: 'guardian', y: item.y + 13, item });
     }
     for (const bridge of BRIDGES) {
       if (this.solved.has(bridge.id)) {
@@ -741,7 +1156,7 @@ export class World {
       if (!propVisible(gate, cx, cy, width, height)) continue;
       list.push({ type: 'gate', y: gate.y, item: gate, opening: open });
     }
-    for (const enemy of this.statics) if ((enemy.alive || enemy.purifyUntil > t) && enemy.x > cx - 20 && enemy.x < cx + width + 20 && enemy.y > cy - 10 && enemy.y < cy + height + 25) list.push({ type: 'static', y: enemy.y, item: enemy });
+    for (const enemy of this.statics) if ((enemy.alive || enemy.lifecycle === 'PURIFIED') && enemy.x > cx - 20 && enemy.x < cx + width + 20 && enemy.y > cy - 10 && enemy.y < cy + height + 25) list.push({ type: 'static', y: enemy.y, item: enemy });
     for (const friend of this.followers) list.push({ type: 'friend', y: friend.y, item: friend });
     list.push({ type: 'hero', y: this.hero.y, item: this.hero });
     list.sort((a, b) => a.y - b.y);
@@ -777,27 +1192,28 @@ export class World {
       if (entry.type === 'prop') {
         if (item.kind === 'npc') drawCharacter(actors, item.character, x, y, { dir: this.nearby?.id === item.id ? direction(this.hero.x - item.x, this.hero.y - item.y) : 'down', frame: -1, t });
         else prop(item.kind, x, y, { t, variant: item.variant ?? item.zone + 1, biome: item.biome, state: this._propState(item) });
-      } else if (entry.type === 'guardian') drawSpirit(actors, GUARDIANS[item.zone].key, x, y + 13, { t, dir: 'down', moving: false, corrupted: true });
+        if (item.interaction === 'well' && this.game.state.friends.length >= 2) this._drawWell(actors, x, y, t);
+      } else if (entry.type === 'guardian') {
+        const friendly = this.restored.has(item.zone);
+        const lift = friendly && !this.game.reducedMotion ? Math.round(Math.sin(((this.shrineGreetings.get(item.zone) ?? t) - t) * Math.PI * 2) * (2 + item.zone % 3)) : 0;
+        drawSpirit(actors, GUARDIANS[item.zone].key, x, y + 13 - lift, { t, dir: 'down', moving: false, corrupted: !friendly });
+        if (friendly) this._glint(actors, x + 10, y - 8, 0);
+      }
       else if (entry.type === 'float') prop('stone-float', x, y - item.shift, { t, biome: item.biome, state: 'floating' });
       else if (entry.type === 'gate') prop('gate', x, y, { t: entry.opening ? t - this.gateTimes.get(item.id) : t, state: entry.opening ? 'opening' : 'closed', biome: item.biome, variant: item.orientation === 'vertical' ? 1 : 0, progress: entry.opening ? clamp((t - this.gateTimes.get(item.id)) / 1.1) : 0 });
       else if (entry.type === 'static') {
-        if (item.lifecycle === 'PURIFIED') {
-          const age = 0.8 - (item.purifyUntil - t);
-          actors.fillStyle = PAL.gold[6];
-          for (let i = 0; i < (this.game.reducedMotion ? 2 : 4); i++) {
-            const sx = x + Math.round(Math.cos(i * Math.PI / 2) * (3 + age * 9));
-            const sy = y - 8 + Math.round(Math.sin(i * Math.PI / 2) * (3 + age * 7) - age * 6);
-            actors.fillRect(sx - 1, sy, 3, 1);
-            actors.fillRect(sx, sy - 1, 1, 3);
-          }
-        } else {
-          const sleeping = item.lifecycle === 'DORMANT';
-          drawStaticling(actors, item.zone, x, y, { t: sleeping ? 0 : t, dir: item.dir, alert: !sleeping && (item.mood === 'alert' || item.mood === 'chase') });
-          if (sleeping) drawText(actors, 'z', x + 6, y - 22, { font: 'small', color: PAL.cream[1], shadow: PAL.shadow });
-        }
-      } else if (entry.type === 'friend') drawSpirit(actors, GUARDIANS[item.zone].key, x, y - this._bridgeLift(item.x, item.y), { t, dir: item.dir, moving: item.moving, corrupted: false });
+        const sleeping = item.lifecycle === 'DORMANT';
+        drawSpecimen(actors, item.species, x, y, { t: sleeping || this.game.reducedMotion ? 0 : t, dir: item.dir, alert: !sleeping && (item.mood === 'alert' || item.mood === 'chase'), golden: item.golden, friendly: item.lifecycle === 'PURIFIED' });
+        if (sleeping) drawText(actors, 'z', x + 6, y - 22, { font: 'small', color: PAL.cream[1], shadow: PAL.shadow });
+        if (item.golden) this._glint(actors, x + 8, y - 19, this.game.reducedMotion ? 0 : t);
+      } else if (entry.type === 'friend') {
+        const gesture = this.game.time < this.gestureUntil;
+        const lift = gesture && !this.game.reducedMotion ? Math.round(Math.sin((this.gestureUntil - this.game.time) * Math.PI * 2) * (2 + item.zone % 3)) : 0;
+        drawSpirit(actors, GUARDIANS[item.zone].key, x, y - this._bridgeLift(item.x, item.y) - lift, { t, dir: gesture ? direction(this.hero.x - item.x, this.hero.y - item.y) : item.dir, moving: item.moving, corrupted: false });
+        if (gesture) this._glint(actors, x + 7, y - 22, 0);
+      }
       else {
-        drawCharacter(actors, 'hero', heroX, heroY, { dir: this.hero.facing, frame: this.hero.moving ? Math.floor(this.hero.step) % 4 : -1, t });
+        drawCharacter(actors, 'hero', heroX, heroY, { dir: this.hero.facing, frame: this.hero.moving ? Math.floor(this.hero.step) % 4 : -1, t, hat: this.game.state.hat });
         heroDrawn = true;
       }
     }
@@ -1000,6 +1416,7 @@ export class World {
       environment.fillRect(Math.round(dust.x - cx) - shift - 1, Math.round(dust.y - cy) - shift, 2, 1);
       environment.fillRect(Math.round(dust.x - cx) + shift + 1, Math.round(dust.y - cy) + 1, 2, 1);
     }
+    this._drawMarks(environment, cx, cy);
     this._drawEntities(environment, actors, cx, cy, screen.w, screen.h, t);
     const zone = this.position.zone;
     const biome = zone < 0 ? 'point' : ZONES[zone].biome;
@@ -1008,9 +1425,10 @@ export class World {
     this._corrupt(environment, cx, cy, screen.w, screen.h, t);
     ctx.drawImage(this.worldLayer.canvas, 0, 0);
     ctx.drawImage(this.actorLayer.canvas, 0, 0);
-    if (this.nearby && !this.puzzle && !this.pendingStone && !this.game.dialogue?.active && !this.game.lessonCard?.active && !this.game.pauseMenu?.active && !this.game.codex?.active) {
+    this._drawEffects(ctx, cx, cy);
+    if (this.nearby && !this.panel && !this.puzzle && !this.pendingStone && !this.game.dialogue?.active && !this.game.lessonCard?.active && !this.game.pauseMenu?.active && !this.game.codex?.active) {
       const item = this.nearby;
-      const label = { npc: 'Talk', camp: 'Rest', stone: 'Learn', shrine: 'Meet', puzzle: 'Bridge', cache: 'Open', shard: 'Take', sign: 'Read', lighthouse: 'Enter' }[item.interaction];
+      const label = { npc: 'Talk', fen: 'Fen', specimen: 'Practise', camp: 'Rest', stone: 'Learn', shrine: this.restored.has(item.zone) ? 'Rematch' : 'Meet', puzzle: 'Bridge', cache: 'Open', shard: 'Take', sign: 'Read', lighthouse: 'Enter', well: 'Well' }[item.interaction] ?? 'Examine';
       const width = measureText(label, 'body') + 24;
       const x = clamp(Math.round(item.x - cx - width / 2), 5, screen.w - width - 5);
       const top = item.kind === 'npc' ? 24 : PROPS[item.kind]?.h ?? 16;
@@ -1027,12 +1445,14 @@ export class World {
       bytes: this.game.state.hero.bytes, maxBytes: stats.maxBytes,
       snacks: this.game.state.hero.snacks, shards: this.game.state.shards.length,
       friends: this.game.state.friends,
-      objective: objective && { text: objective.text, dx: objective.x - this.hero.x, dy: objective.y - this.hero.y },
+      objective: objective && { text: objective.text, dx: (objective.waypoint?.x ?? objective.x) - this.hero.x, dy: (objective.waypoint?.y ?? objective.y) - this.hero.y },
     }, t);
     this.puzzle?.draw(ctx, screen, t);
+    this._drawPanel(ctx, screen, t);
   }
 
   describe() {
+    if (this.panel) return `${this.panel.title}. ${this.panel.note} ${this.panel.options.map((label, index) => `${index === this.panel.selected ? 'Selected: ' : ''}${label}`).join('. ')}.`;
     if (this.puzzle) return this.puzzle.describe();
     if (this.pendingStone) return `Grid Stone awakening. ${ZONES[this.pendingStone.zone].corruptBits} to ${this._colourBits(this.pendingStone.zone)} colour bits.`;
     const chasers = this.statics.filter((enemy) => enemy.alive && enemy.mood === 'chase').length;

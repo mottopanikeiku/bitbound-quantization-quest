@@ -54,10 +54,10 @@ async function applyDevRoute(params) {
     const friends = friendsParam(guardian ? guardian.id : zone);
     game.state = progressed(friends, Math.max(friends, zone + 1));
     game.worldScene.reset();
-    game.scene = game.battleScene;
-    game.setMusicScene(guardian ? 'boss' : 'battle');
+    game.scene = game.worldScene;
+    game.worldScene.enter({});
     const mode = params.get('mode') === 'practice' ? 'practice' : 'campaign';
-    game.battleScene.enter({ foeId, species: params.get('species'), mode, guardian: Boolean(guardian), golden: params.has('golden'), uid: `dev-${foeId}`, zone });
+    game.startBattle({ foeId, species: params.get('species'), mode, guardian: Boolean(guardian), golden: params.has('golden'), uid: `dev-${foeId}`, zone });
     return;
   }
   // ?duel=fen-offset|fen-hot|fen-crown — friends default to the friendship that unlocks the duel.
@@ -66,9 +66,9 @@ async function applyDevRoute(params) {
     const friends = friendsParam({ 'fen-offset': 2, 'fen-hot': 5, 'fen-crown': 7 }[duel] ?? 2);
     game.state = progressed(friends, friends);
     game.worldScene.reset();
-    game.scene = game.battleScene;
-    game.setMusicScene('rival', 'battle');
-    game.battleScene.enter({ foeId: 'fen', mode: 'duel', duel, uid: duel, zone: 0 });
+    game.scene = game.worldScene;
+    game.worldScene.enter({});
+    game.startRivalDuel(duel);
     return;
   }
   // ?well[&friends=N] — the Well entrance with N friends (default 3).

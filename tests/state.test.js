@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadGame, newGame, sanitize, saveGame, SAVE_KEY, LEGACY_SAVE_KEYS } from '../src/state.js';
+import { newRun } from '../src/well/run.js';
 
 function memoryStorage(initial = {}) {
   const data = new Map(Object.entries(initial));
@@ -90,7 +91,7 @@ test('v4 meta-progress round-trips and untrusted values are clamped or dropped',
     rival: { won: ['fen-hot', 'fen-hot', 'fen-zzz'], losses: 2.9 },
     hat: 'not-a-hat',
     pin: 'meadow-hidden',
-    wellRun: { version: 1, seed: 3735928559, depth: 6, cleared: 5, score: 900, techniques: ['bits', 'zero'], friends: [0, 1, 6], hero: { hp: 999, bytes: 20, snacks: 2 }, limits: { maxHp: 64, maxBytes: 56, power: 22, maxSnacks: 3 } },
+    wellRun: newRun({ seed: 3735928559, techniques: ['bits'], friends: [0] }),
     progress: {
       dex: { 'bit-sprig': { seen: true, cleared: 3, golden: 1, goldenSeen: true }, 'static-99': { seen: true } },
       records: { nib: { grade: 'S', score: 94, turns: 5, fidelity: 0.97 }, chime: { grade: 'Z', score: 10 } },
@@ -102,10 +103,9 @@ test('v4 meta-progress round-trips and untrusted values are clamped or dropped',
   assert.deepEqual(state.rival, { won: ['fen-hot'], losses: 2 });
   assert.equal(state.hat, null);
   assert.equal(state.pin, 'meadow-hidden');
-  assert.equal(state.wellRun.seed, 3735928559);
-  assert.deepEqual(state.wellRun.techniques, ['bits'], 'a run never keeps techniques the adventure has not learned');
-  assert.deepEqual(state.wellRun.friends, [0]);
-  assert.equal(state.wellRun.hero.hp, 64, 'run HP is clamped to the run limits');
+  assert.equal(state.wellRun.seed, 3735928559, 'a valid suspended run survives');
+  const forged = sanitize({ version: 4, started: true, friends: [0], techniques: ['bits'], wellRun: newRun({ seed: 7, techniques: ['bits', 'zero'], friends: [0] }) });
+  assert.equal(forged.wellRun, null, 'a run using a technique the adventure has not learned is dropped');
   assert.deepEqual(Object.keys(state.progress.dex), ['bit-sprig']);
   assert.ok(state.progress.dex['bit-sprig'].golden, 'a caught golden survives sanitizing');
   assert.deepEqual(Object.keys(state.progress.records), ['nib']);

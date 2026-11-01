@@ -100,12 +100,18 @@ function drawLogo(ctx, cx, y) {
   // A deliberate 2× title treatment, never a scaled gameplay sprite.
   ctx.drawImage(logo, Math.round(cx - logo.width), Math.round(y), logo.width * 2, logo.height * 2);
 }
+/** Island completion plus the Well's best depth once the hero has dived, else the friends made. */
+function continueSummary(state) {
+  const island = `Island ${completion(state).percent}%`;
+  const best = state.progress?.well?.best ?? 0;
+  return best > 0 ? `${island} · Well B${best}` : `${island} · ${state.friends?.length ?? 0}/7 friends`;
+}
 export class TitleScene {
   constructor(game) { this.game = game; this.selected = 0; this.confirming = false; this.age = 0; }
   enter() {
     this.selected = 0; this.confirming = false; this.age = 0; this.game.setMusicScene('title');
-    const progress = completion(this.game.state);
-    this.game.announce(this.game.state.started ? `Continue selected. Island ${progress.percent}% complete. Well best B${this.game.state.progress?.well?.best ?? 0}.` : 'New Game selected. A or Enter begins the adventure.');
+    if (this.game.state.started) this.game.announce(`Continue selected. ${continueSummary(this.game.state)}.`);
+    else this.game.announce('New Game selected. A or Enter begins the adventure.');
   }
   items() { return this.confirming ? ['Keep my adventure', 'Begin anew'] : this.game.state.started ? ['Continue', 'New Game'] : ['New Game']; }
   update(dt, input) {
@@ -138,9 +144,8 @@ export class TitleScene {
     drawWindow(ctx, mx, my, mw, mh, 'glass');
     drawMenu(ctx, mx + 14, my + 11, saved ? ['Continue'] : ['New Game'], this.confirming ? -1 : saved && this.selected === 1 ? -1 : 0, { colWidth: mw - 28, t: 0 });
     if (saved) {
-      const progress = completion(this.game.state);
       drawIcon(ctx, 'map', mx + 26, my + 26);
-      drawText(ctx, `Island ${progress.percent}% · Well B${this.game.state.progress?.well?.best ?? 0}`, mx + 39, my + 27, { font: 'small', color: PAL.cream[2] });
+      drawText(ctx, continueSummary(this.game.state), mx + 39, my + 27, { font: 'small', color: PAL.cream[2] });
       drawMenu(ctx, mx + 14, my + 49, ['New Game'], this.confirming || this.selected === 1 ? 0 : -1, { colWidth: mw - 28, t: 0 });
     }
     const keys = w >= 240 ? '↑↓ Choose · Enter begins · M music · F full screen' : 'Enter begins · M music · F full screen';

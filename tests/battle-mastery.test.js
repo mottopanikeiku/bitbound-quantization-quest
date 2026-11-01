@@ -154,3 +154,14 @@ test('calibration event exposes resolved regime, not concealed live values', () 
   battle._beginTurn(); cast(battle);
   assert.equal(events.filter(event => event.type === 'cast').at(-1).regime, 'storm');
 });
+
+test('rematches are fought at the first-meeting level however strong the hero has grown', () => {
+  // A late-game hero (power 37) once cleared Chime with two fat 8-bit packets and earned an S.
+  const early = fixture({ foeId: 'chime', mode: 'practice', guardian: true, zone: 1 });
+  const late = fixture({ foeId: 'chime', mode: 'practice', guardian: true, zone: 1 });
+  late.game.stats = () => ({ maxHp: 96, maxBytes: 112, power: 37, maxSnacks: 5 });
+  const relaunched = new Battle({ game: late.game, foeId: 'chime', mode: 'practice', guardian: true, zone: 1 });
+  assert.deepEqual(relaunched.limits, early.battle.limits);
+  assert.equal(relaunched.limits.power, 19, 'Chime is first met with one friend');
+  assert.equal(new Battle({ game: late.game, foeId: 'chime', zone: 1 }).limits.power, 37, 'campaign fights keep the hero’s current strength');
+});

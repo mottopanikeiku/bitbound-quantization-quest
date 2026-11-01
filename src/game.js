@@ -16,13 +16,15 @@ import { IntroScene } from './scenes/intro.js';
 import { EndingScene } from './scenes/ending.js';
 import { WorldScene } from './scenes/world-scene.js';
 import { BattleScene } from './scenes/battle-scene.js';
-import { drawTransition } from './art/transitions.js';
+import { drawTransition, TRANSITION_KINDS } from './art/transitions.js';
 import { applyEvent, BADGES } from './progress/progress.js';
 import { Journal } from './ui/journal.js';
 import { WellScene } from './scenes/well-scene.js';
 import { originSpecies } from './content/static-dex.js';
+import { INTERACTABLES } from './world/map.js';
+import { campReachable } from './world/world.js';
 
-const COVER_SECONDS = { fade: 0.32, 'battle-in': 0.9, 'battle-out': 0.45, wipe: 0.4 };
+const COVER_SECONDS = { fade: 0.32, 'battle-in': 0.9, 'battle-out': 0.45, wipe: 0.4, descend: 0.7 };
 
 export class Game {
   constructor({ canvas, stage, storage = globalThis.localStorage }) {
@@ -39,6 +41,8 @@ export class Game {
     this.transition = null;
     // Victory recap card waits until the zone's colour flood has played.
     this.pendingRecap = null;
+    // Badges unlocked mid-battle, celebrated once the battle scene is left.
+    this.heldBadges = [];
     this.recapAt = 0;
     this.dialogue = new DialogueBox(this);
     this.lessonCard = new LessonCard(this);
@@ -237,6 +241,7 @@ export class Game {
   _setScene(scene, params) {
     this.scene = scene;
     scene.enter(params);
+    if (scene !== this.battleScene) this._celebrateBadges();
   }
 
   newGame() {
@@ -294,22 +299,33 @@ export class Game {
    * species selects a staticling motif (dex id); golden marks the rare variant.
    * Practice, duels and Well floors never change the campaign hero, friends or rewards.
    */
-  startBattle({ foeId, species = null, mode = 'campaign', guardian = false, uid = null, zone = 0, golden = false, duel = null, well = null }) {
-    const from = mode === 'well' ? this.wellScene : this.worldScene;
+  startBattle(params) {
+    const from = params.mode === 'well' ? this.wellScene : this.worldScene;
     if (this.transition || this.scene !== from) return false;
+    return this._enterBattle(params);
+  }
+
+  _enterBattle({ foeId, species = null, mode = 'campaign', guardian = false, uid = null, zone = 0, golden = false, duel = null, well = null }) {
     this.save();
     const { canvas, ctx } = makeCanvas(this.screen.w, this.screen.h);
     ctx.drawImage(this.screen.canvas, 0, 0);
     this.audio.play(golden ? 'golden' : 'charge');
     if (mode === 'duel') this.setMusicScene('rival', 'battle');
-    else if (mode === 'well' && well?.warden) this.setMusicScene('warden', 'boss');
+    else if (mode === 'well') this.setMusicScene(well?.warden ? 'warden' : 'well', well?.warden ? 'boss' : 'battle');
     else this.setMusicScene(guardian ? 'boss' : 'battle');
     const params = { foeId, species, mode, guardian, uid, zone, golden, duel, well };
-    this.emit('battle-start', { foeId, species, mode, guardian, golden, duel, depth: well?.depth ?? null });
-    return this.cut(() => this._setScene(this.battleScene, params), { kind: 'battle-in', from: canvas });
+    // Emitted once the battle owns the screen, so any badge it unlocks waits for the fight to end.
+    return this.cut(() => {
+      this._setScene(this.battleScene, params);
+      this.emit('battle-start', { foeId, species, mode, guardian, golden, duel, depth: well?.depth ?? null });
+    }, { kind: 'battle-in', from: canvas });
   }
 
-  /** Apply a finished battle's result, settled by mode, and return to the island or the Well. */
+  /**
+   * Apply a finished battle's result, settled by mode, and return to the island or the Well.
+   * result.again (practice and duels only) starts the same fight again straight away: neither
+   * mode touches campaign supplies, so a retry costs nothing.
+   */
   endBattle(result, params) {
     const state = this.state;
     const mode = params.mode ?? 'campaign';
@@ -318,7 +334,8 @@ export class Game {
     state.stats.battles++;
     state.stats.perfects += result.stats?.perfects ?? 0;
     state.stats.fizzles += result.stats?.fizzles ?? 0;
-    state.gear = { ...state.gear, ...result.gear };
+    // Only island fights change the saved loadout; practice, duels and the Well keep it.
+    if (mode === 'campaign') state.gear = { ...state.gear, ...result.gear };
     if (result.guardTaught) this.setFlag('guard-taught');
     // Committed assists count per friend in completed fights (won or lost, not fled): cosmetic bonds.
     if (result.outcome !== 'fled') for (const key of result.assists ?? []) state.bonds[key] = Math.min(999, (state.bonds[key] ?? 0) + 1);
@@ -381,6 +398,7 @@ export class Game {
       };
       if (reward) after = () => this.toast(`${params.golden ? 'Golden static cleared' : 'Static cleared'}: +${reward} B`, { kind: 'reward', ms: 2200 });
     }
+    if (result.again && (mode === 'practice' || mode === 'duel')) return this._enterBattle(params);
     if (mode === 'campaign') world.afterBattle(params.uid, result.outcome);
     this.cut(
       () => {
@@ -405,7 +423,8 @@ export class Game {
     if (this.transition || this.scene !== this.worldScene) return false;
     this.save();
     this.audio.play('descend');
-    return this.cut(() => this._setScene(this.wellScene, {}), { kind: 'fade' });
+    const kind = TRANSITION_KINDS.includes('descend') ? 'descend' : 'fade';
+    return this.cut(() => this._setScene(this.wellScene, {}), { kind, reveal: 'fade' });
   }
 
   /** Back to the island beside the well; the hero never moved, so no zone banner. */
@@ -419,9 +438,10 @@ export class Game {
     return this.startBattle({ foeId: 'fen', mode: 'duel', duel: duelId, uid: duelId, zone: this.worldScene.world.position.zone });
   }
 
-  /** Campfire travel between camps the hero has rested at. */
+  /** Campfire travel (after Nib's friendship) to camps the hero has rested at and may reach. */
   travelTo(campId) {
-    if (this.transition || this.scene !== this.worldScene || !this.state.camps.includes(campId)) return false;
+    const camp = INTERACTABLES.find((item) => item.id === campId);
+    if (this.transition || this.scene !== this.worldScene || !this.state.friends.length || !campReachable(this.state, camp)) return false;
     this.audio.play('travel');
     this.emit('travel', { to: campId });
     return this.cut(() => {
@@ -443,16 +463,24 @@ export class Game {
     this.save();
   }
 
-  /** Report a gameplay event to meta-progress (dex, records, badges); badge unlocks are celebrated. */
+  /**
+   * Report a gameplay event to meta-progress (dex, records, badges). Badge unlocks are
+   * celebrated at once outside battle; a fight keeps its screen and celebrates on return.
+   */
   emit(type, data = {}) {
     const unlocked = applyEvent(this.state.progress, { type, ...data }, { state: this.state }) ?? [];
-    for (const id of unlocked) {
+    this.heldBadges.push(...unlocked);
+    if (this.scene !== this.battleScene) this._celebrateBadges();
+    return unlocked;
+  }
+
+  _celebrateBadges() {
+    for (const id of this.heldBadges.splice(0)) {
       const badge = BADGES.find((item) => item.id === id);
       if (!badge) continue;
       this.audio.play('badge');
       this.toast(`Badge earned: ${badge.name}`, { kind: 'badge', ms: 3600 });
     }
-    return unlocked;
   }
 
   // ── Services for scenes and overlays ─────────────────────────────────────
@@ -501,10 +529,15 @@ export class Game {
     const stats = this.stats();
     this.state.caches.push(id);
     this.emit('cache', { id });
-    this.state.hero.snacks = Math.min(stats.maxSnacks, this.state.hero.snacks + 1);
-    this.state.hero.bytes = Math.min(stats.maxBytes, this.state.hero.bytes + 12);
+    // Report what actually arrived: snacks and bytes are capped.
+    const hero = this.state.hero;
+    const snacks = Math.min(stats.maxSnacks, hero.snacks + 1) - hero.snacks;
+    const bytes = Math.min(stats.maxBytes, hero.bytes + 12) - hero.bytes;
+    hero.snacks += snacks;
+    hero.bytes += bytes;
     this.audio.play('cache');
-    this.toast('Picnic cache: +1 snack, +12 bytes', { kind: 'reward' });
+    const parts = [snacks ? '+1 snack' : 'snacks full', bytes ? `+${bytes} B` : 'bytes full'];
+    this.toast(`Picnic cache: ${parts.join(', ')}`, { kind: 'reward' });
     this.save();
     return true;
   }

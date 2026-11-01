@@ -55,8 +55,56 @@ const JOKES = {
   'spire-npc-b': ['Good news: I reached the summit. Bad news: the summit has more summit.', 'The last crossing has just *15 bytes* of packet space. Try 4 bits for the fine row, 3 for the middle, 2 for the coarse. Then seven friends, and home to the lighthouse.'],
 };
 
+export const REPEAT_LINES = {
+  'point-kid': 'My treasure-hunt ledger now has a treasure-hunt ledger. Neither is tidy.',
+  'point-fisher': 'The fish rejected my thesis. Fair: I cited a sandwich.',
+  'point-cat': 'Mrrp. (Deputy Crumb has promoted you to Assistant Sunbeam.)',
+  'meadow-npc-a': 'The flowers have requested compliments in writing. I am drafting seventeen little letters.',
+  'meadow-npc-b': 'Pocket meadow update: the daisies are asking for a window.',
+  'grove-npc-a': 'I moved the bell to 6:01. The neighbours appreciated the precision of their annoyance.',
+  'grove-npc-b': 'The square tomato has started a round-table discussion. It is going very badly.',
+  'cove-npc-a': 'The crab predicts damp biscuits again. Extremely consistent science.',
+  'cove-npc-b': 'Departure remains approximately yes. Arrival is provisionally splendid.',
+  'heights-npc-a': 'Soup emergency successfully contained. Two scarves remain on active duty.',
+  'heights-npc-b': 'Twenty teaspoons of mountain today. Tomorrow: a considerably smaller spoon.',
+  'forge-npc-a': 'Clang and Clang are rehearsing a duet. Earplugs are the third instrument.',
+  'forge-npc-b': 'My lunch is still warm. I suspect Cinder has warmed the idea of lunch itself.',
+  'archives-npc-a': 'The dictionaries have hatched. Please pronounce their names gently.',
+  'archives-npc-b': 'The appendix waved. I waved back. We have agreed not to elaborate.',
+  'spire-npc-a': 'Found my pencil! Unfortunately the dragon has borrowed my eraser.',
+  'spire-npc-b': 'Beyond the next summit: probably another summit. I admire its commitment.',
+};
+
+export const RESTORED_LINES = {
+  'meadow-npc-a': 'Seventeen greens again! Nib has appointed me deputy leaf appreciator.',
+  'meadow-npc-b': 'Nib gave my pocket meadow a tiny sunrise. Rent is now one compliment.',
+  'grove-npc-a': 'Chime rang a welcome-home chord. The neighbours applauded. At a reasonable hour!',
+  'grove-npc-b': 'Chime is back, and my square tomato has finally ripened on all four sides.',
+  'cove-npc-a': 'Brine is home. The crab upgraded the forecast to biscuits with a chance of sunshine.',
+  'cove-npc-b': 'Brine restored the sea blue. We sail at approximately delighted.',
+  'heights-npc-a': 'Spindle knitted the wind a scarf. Soup safety has never looked brighter.',
+  'heights-npc-b': 'Spindle repaired my measuring ribbon. The mountain is still inconveniently mountain-sized.',
+  'forge-npc-a': 'Cinder polished both Clangs. Family dinners are now loud and beautifully lit.',
+  'forge-npc-b': 'Cinder is home, and the embers look like little invitations to supper.',
+  'archives-npc-a': 'Vesper is back. The books are showing off their jackets, very quietly.',
+  'archives-npc-b': 'Vesper lent me a book with no appendages. A soothingly normal adventure.',
+  'spire-npc-a': 'Auric brought back the aurora. I found my pencil by its light; a heroic collaboration.',
+  'spire-npc-b': 'Auric says this summit is enough. For once, so do my knees.',
+};
+
+export const GUARDIAN_HOME_LINES = [
+  'Seventeen greens! I named the newest one “you came back.” Want to practise our leaf song?',
+  'Ding, dong, dinner bell! I saved the little offbeat note just for us. Another duet?',
+  'I cannot promise calm seas. I can promise excellent company in them. Care for another tide?',
+  'I wove a tiny thread for each of us. Yours keeps finding the sunshine. Shall we weave again?',
+  'The hearth is warm, the soup is not a geological event, and you are here. Another spark?',
+  'Your name has its own shelf. Not under “enormous”: under “welcome.” Shall we try a new chapter?',
+  'Seven friends fit in one small circle. I kept your place. Would you like another crown-shaped puzzle?',
+];
+
 export function npcDialogue(npc, state, first = false, touch = false) {
   const friends = state.friends.length;
+  if (!first && npc.id !== 'point-keeper') return [voice(npc, state.friends.includes(npc.zone) && RESTORED_LINES[npc.id] ? RESTORED_LINES[npc.id] : REPEAT_LINES[npc.id] ?? 'It is good to see you again. The island can wait.')];
   if (npc.id === 'point-keeper') {
     if (friends === 7) return [voice(npc, 'Seven colours. Seven friends. And you, with considerably more pockets than when you left.'), voice(npc, 'Bring them into the lighthouse. The Oracle is ready to come home.')];
     if (first) return [
@@ -65,14 +113,14 @@ export function npcDialogue(npc, state, first = false, touch = false) {
       voice(npc, 'Take the west path to Bitleaf Meadow. Wake its *Grid Stone*, then help Nib at the shrine.'),
       voice(npc, 'Campfires refill you. Little Staticlings chase, but running helps. We befriend the big spirits; nobody gets squashed.'),
     ];
-    return [voice(npc, `${friends} of seven friends. The kettle believes in you. So do I.`), voice(npc, fact(-1, 1)), voice(npc, 'Follow the objective arrow. The next Grid Stone is always waiting before its guardian.')];
+    return [voice(npc, `${friends} of seven friends. The kettle believes in you. So do I.`)];
   }
   if (npc.id === 'point-kid') return [voice(npc, 'I hid two bit shards in the village. This is either a treasure hunt or very untidy accounting.'), voice(npc, fact(-1, 0)), voice(npc, 'Collect eight shards and your byte pouch grows. The cliffs are not a shortcut. I checked.')];
   if (npc.id === 'point-fisher') return [voice(npc, 'The fish are biting. Mostly my thesis.'), voice(npc, fact(-1, 1)), voice(npc, 'The dock is for thinking. West is for adventures. Please do not mix those up at speed.')];
   if (npc.id === 'point-cat') return [{ speaker: 'Deputy Crumb', portrait: 'kid', text: 'Mrrp. (You receive no technical advice. It is strangely refreshing.)' }];
   const jokes = JOKES[npc.id];
   const restored = state.friends.includes(npc.zone);
-  return [voice(npc, jokes[0]), voice(npc, fact(npc.zone, npc.id.endsWith('-b') ? 1 : 0)), voice(npc, restored ? `${GUARDIANS[npc.zone].name} is back, and so are the colours. ${npc.zone === 5 ? 'The books are showing off their jackets.' : 'Even the shadows look relieved.'}` : jokes[1])];
+  return [voice(npc, jokes[0]), voice(npc, fact(npc.zone, npc.id.endsWith('-b') ? 1 : 0)), voice(npc, restored ? RESTORED_LINES[npc.id] : jokes[1])];
 }
 
 export function signText(zone, touch = false) {
@@ -109,10 +157,44 @@ export function shrineDialogue(zone) {
   ];
 }
 
+// Fen values fidelity, and his friends, more than winning an argument.
+export const FEN_LINES = {
+  'fen-offset': {
+    before: ['My atlas keeps every decimal. My backpack has applied for its own backpack.', 'Three little bells, one agreement: at least 98.5% reconstruction fidelity in a packet of at most 11 B. Bring your clever ruler!'],
+    after: ['You gave zero a home! I gave my spare atlas a chair. It was getting tired.', 'A shifted grid suits these bells. Wide values still have their uses; carrying seven maps to lunch does not.'],
+    won: 'Eleven bytes and a clear bell. My shoulders are applauding. Quietly. They are shoulders.',
+    lost: 'No harm done. The bells will wait, and I have packed enough biscuits for a mathematically unreasonable picnic.',
+    fled: 'Excellent tactical tea break. I shall guard the maps from aggressive sandwiches.',
+  },
+  'fen-hot': {
+    before: ['I brought a backup atlas for my backup atlas. Cinder says the furnace is not a filing cabinet.', 'Three weight packets: output fidelity at least 98.5%, at most 12 B each. The hot input channels are our clues.'],
+    after: ['You kept the outputs clear without polishing every weight equally. My maps are taking notes.', 'Precision where it matters! Also: biscuits where I can reach them. Both excellent allocation policies.'],
+    won: 'Those hot channels earned their seats. My spare decimals may walk home; they have very comfortable shoes.',
+    lost: 'The furnace is warm, not impatient. Another attempt whenever you fancy; your island supplies stayed safe.',
+    fled: 'A sensible pause. I will fold the map. This may require a smaller map of the map.',
+  },
+  'fen-crown': {
+    before: ['Three atlas pockets! One for important details, one for snacks, one currently occupied by a very confident moth.', 'Three head packets: weighted fidelity at least 98.5%, at most 32 B each. Let the declared sensitivities guide you.'],
+    after: ['A small satchel, a clear crown. I have written “precision where it matters” on the enormous atlas.', 'There is room beside it for your name. And a moth. The moth insists on co-authorship.'],
+    won: 'Beautifully budgeted. Come annotate the island with me: here be friends, here be snacks, here be enough.',
+    lost: 'No lost supplies, no disappointed cartographer. We can redraw that plan whenever you like.',
+    fled: 'Later is a perfectly good coordinate. I will be right here, debating the moth about scale.',
+  },
+};
+
+export function fenDialogue(id, state, outcome = null) {
+  const lines = FEN_LINES[id];
+  if (!lines) return [];
+  const text = outcome ? [lines[outcome] ?? lines.fled] : state.rival?.won?.includes(id) ? lines.after : lines.before;
+  return text.map((line) => ({ speaker: 'Fen Float', portrait: PORTRAIT_IDS.includes('fen') ? 'fen' : 'scholar', text: line }));
+}
+
 export function interactionName(item, state) {
   if (item.interaction === 'npc') return `Talk: ${names[item.id] ?? 'friend'}`;
   if (item.interaction === 'camp') return 'Rest & refill';
-  if (item.interaction === 'well') return state.friends.length ? 'Descend the Static Well' : 'Listen at the old well';
+  if (item.interaction === 'fen') return 'Talk to Fen Float';
+  if (item.interaction === 'specimen') return `Practise with ${item.name ?? item.species}`;
+  if (item.interaction === 'well') return state.friends.length >= 2 ? 'Descend the Static Well' : 'Listen at the old well';
   if (item.interaction === 'stone') return state.techniques.includes(ZONES[item.zone].technique) ? 'Awakened Grid Stone' : `Learn ${TECHNIQUES[ZONES[item.zone].technique].name}`;
   if (item.interaction === 'shrine') return state.friends.includes(item.zone) ? 'Restored shrine' : `Meet ${GUARDIANS[item.zone].name}`;
   if (item.interaction === 'puzzle') return state.puzzles.includes(item.id) ? 'Snap Bridge: solved' : 'Try Snap Bridge';

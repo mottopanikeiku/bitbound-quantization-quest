@@ -431,7 +431,7 @@ test('signs and warm NPC clues describe their own goals instead of recommending 
     assert.ok(sign.includes(puzzle.goal));
     assert.ok(sign.includes(puzzle.hint));
     const npc = { id: `${ZONES[puzzle.zone].key}-npc-b`, zone: puzzle.zone, character: 'hiker' };
-    const lines = npcDialogue(npc, state).map((line) => line.text);
+    const lines = npcDialogue(npc, state, true).map((line) => line.text);
     assert.equal(lines.length, 3, 'warm voice, verified fact, then applied clue');
     assert.ok(lines.every((line) => typeof line === 'string' && line.length > 0));
     if (puzzle.zone > 0) assert.doesNotMatch(lines[2], /one shared level|turn.*off|fewer bits make a better walkway/i);

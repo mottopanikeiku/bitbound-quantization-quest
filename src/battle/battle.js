@@ -57,8 +57,12 @@ export class Battle {
     this.guardian = guardian;
     this.uid = uid;
     this.zone = zone;
-    this.limits = mode === 'well' ? { ...well.limits } : mode === 'duel' ? { maxHp: 56, maxBytes: 64, power: 22 } : game.stats?.() ?? heroStats(game.state);
-    // Practice reconstructs campaign capacity; isolated modes never read state.hero.
+    // Practice replays a foe at the hero's level when it was first met (one friend per earlier
+    // zone, no shard bonus), so pars, grades and records stay comparable however strong the hero grows.
+    this.limits = mode === 'well' ? { ...well.limits } : mode === 'duel' ? { maxHp: 56, maxBytes: 64, power: 22 }
+      : mode === 'practice' ? heroStats({ friends: Array.from({ length: zone }, (_, i) => i), shards: [] })
+      : game.stats?.() ?? heroStats(game.state);
+    // Practice reconstructs a fresh loadout; isolated modes never read state.hero.
     this.hero = mode === 'campaign' ? { ...game.state.hero } : mode === 'well' ? { ...well.hero }
       : { hp: this.limits.maxHp, bytes: this.limits.maxBytes, snacks: 3 };
     this.techniques = [...(well?.techniques ?? game.state.techniques ?? [])];
