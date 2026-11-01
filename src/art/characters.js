@@ -4,7 +4,8 @@ import { PAL } from './palette.js';
 import { LIGHT, shadeRamp, spriteCache } from './paint.js';
 import { drawText } from '../engine/font.js';
 
-export const CHARACTER_IDS = ['hero', 'keeper', 'kid', 'fisher', 'smith', 'librarian', 'hiker', 'botanist', 'sailor', 'scholar', 'cat', 'frog'];
+export const CHARACTER_IDS = ['hero', 'keeper', 'kid', 'fisher', 'smith', 'librarian', 'hiker', 'botanist', 'sailor', 'scholar', 'cat', 'frog', 'fen'];
+export const HAT_IDS = ['lantern-cap', 'static-hood', 'crown-of-levels', 'oracle-halo', 'fen-scarf', 'naturalist-cap'];
 // Shared with the bespoke portrait painter: clothing and complexion do not
 // change when a villager starts a conversation.
 export const CHARACTER_LOOKS = Object.freeze({
@@ -18,6 +19,7 @@ export const CHARACTER_LOOKS = Object.freeze({
   botanist: { coat: 'leaf', trim: 'rose', hair: 'wood', skin: 3 },
   sailor: { coat: 'roofBlue', trim: 'cream', hair: 'wood', skin: 4 },
   scholar: { coat: 'violet', trim: 'teal', hair: 'stone', skin: 3 },
+  fen: { coat: 'roof', trim: 'teal', hair: 'wood', skin: 4 },
 });
 const DIRS = ['down', 'left', 'up', 'right'];
 const STEP = [0, 1, 0, -1];
@@ -41,6 +43,33 @@ function lattice(p, x, y, pulse) {
   p.line(x, y + 2, x, y + 5, PAL.teal[8]).line(x + 3, y + 4, x + 3, y + 7, PAL.teal[8]);
   p.line(x + 6, y + 2, x + 6, y + 5, PAL.teal[7]).line(x, y + 5, x + 3, y + 7, PAL.teal[7]);
   p.line(x + 3, y + 7, x + 6, y + 5, PAL.teal[6]).set(x + 3, y + 2, PAL.cream[3]);
+}
+function heroHat(p, hat, y, dir, pulse) {
+  const side = dir === 'left' || dir === 'right', sign = dir === 'left' ? -1 : 1;
+  if (hat === 'lantern-cap') {
+    lightBall(p, 11, y + 2, 6, 3, PAL.ash);
+    p.line(5, y + 5, 17, y + 5, PAL.gold[4]);
+    outlinedRect(p, side ? 9 + sign * 5 : 9, y, 5, 5, PAL.gold);
+    p.rect(side ? 11 + sign * 5 : 11, y + 1, 1, 3, PAL.gold[pulse ? 8 : 6]);
+  } else if (hat === 'static-hood') {
+    p.poly([[4, y + 9], [5, y + 2], [10, y], [16, y + 1], [18, y + 10], [16, y + 13], [15, y + 6], [7, y + 6], [6, y + 13]], PAL.violet[2]);
+    p.line(6, y + 3, 10, y + 1, PAL.violet[6]);
+    p.rect(5, y + 8, 3, 1, PAL.teal[7]); p.rect(15, y + 3, 3, 1, PAL.violet[7]);
+  } else if (hat === 'crown-of-levels') {
+    p.poly([[5, y + 5], [5, y + 1], [8, y + 3], [11, y], [14, y + 3], [17, y + 1], [17, y + 5]], PAL.gold[2]);
+    p.line(6, y + 4, 16, y + 4, PAL.gold[7]); p.rect(10, y + 2, 3, 2, PAL.teal[6]);
+  } else if (hat === 'oracle-halo') {
+    p.line(4, y + 1, 18, y + 1, PAL.gold[5]); p.line(6, y, 16, y, PAL.cream[3]);
+    p.line(4, y + 1, 7, y + 3, PAL.teal[5]); p.line(18, y + 1, 15, y + 3, PAL.teal[6]);
+    p.set(11, y + 1, PAL.gold[8]);
+  } else if (hat === 'fen-scarf') {
+    p.rect(6, y + 13, 11, 3, PAL.teal[3]); p.line(6, y + 13, 16, y + 13, PAL.teal[7]);
+    p.rect(dir === 'up' ? 5 : 15, y + 15, 3, 7, PAL.teal[4]);
+    p.rect(dir === 'up' ? 5 : 15, y + 20, 3, 1, PAL.gold[6]);
+  } else if (hat === 'naturalist-cap') {
+    lightBall(p, 11, y + 2, 6, 3, PAL.leaf); p.line(4, y + 5, 18, y + 5, PAL.leaf[2]);
+    p.poly([[14, y + 2], [15, y], [19, y + 1], [17, y + 4]], PAL.rose[5]); p.set(16, y + 2, PAL.gold[7]);
+  }
 }
 function headwear(p, id, y, dir, look) {
   const back = dir === 'up', side = dir === 'left' || dir === 'right', sign = dir === 'left' ? -1 : 1;
@@ -83,7 +112,7 @@ function headwear(p, id, y, dir, look) {
     p.rect(4, y + 3, 2, 2, PAL.gold[6]); p.rect(17, y + 3, 2, 2, PAL.gold[6]);
   }
 }
-function humanoid(p, id, dir, frame, blink, breathe) {
+function humanoid(p, id, dir, frame, blink, breathe, hat) {
   const look = CHARACTER_LOOKS[id], coat = ramp(look.coat), hair = ramp(look.hair);
   const back = dir === 'up', side = dir === 'left' || dir === 'right', facing = dir === 'left' ? -1 : dir === 'right' ? 1 : 0;
   const walk = frame < 0 ? 0 : STEP[frame], bob = frame < 0 ? -breathe : -(frame % 2);
@@ -92,6 +121,16 @@ function humanoid(p, id, dir, frame, blink, breathe) {
   if (id === 'hiker') {
     outlinedRect(p, side ? 7 - facing * 4 : 5, 12 + bob, side ? 6 : 13, 10, PAL.sand);
     p.rect(side ? 8 - facing * 4 : 7, 11 + bob, side ? 4 : 9, 3, PAL.teal[3]);
+  }
+  if (id === 'fen') {
+    const px = side ? 6 - facing * 3 : 3;
+    outlinedRect(p, px, 10 + bob, side ? 8 : 17, 14, PAL.wood);
+    for (let i = 0; i < 3; i++) {
+      outlinedRect(p, px + i * 3, 3 + bob - i % 2, 4, 15, PAL.cream);
+      p.rect(px + i * 3 + 1, 5 + bob, 2, 2, PAL.teal[3]);
+      p.line(px + i * 3 + 1, 10 + bob, px + i * 3 + 2, 10 + bob, PAL.gold[4]);
+    }
+    p.line(px, 18 + bob, px + (side ? 7 : 16), 18 + bob, PAL.roof[3]);
   }
   if (id === 'hero' && back) {
     p.line(19, 10 + bob, 19, 24, PAL.wood[2]); lattice(p, 16, 4 + bob, breathe);
@@ -146,6 +185,12 @@ function humanoid(p, id, dir, frame, blink, breathe) {
   } else if (id === 'scholar') {
     outlinedRect(p, 16, by + 2, 4, 7, PAL.cream); p.line(17, by + 4, 19, by + 4, PAL.gold[3]);
   } else if (id === 'kid') p.rect(9, by + 2, 4, 3, PAL.gold[5]);
+  if (id === 'fen') {
+    p.rect(6, by - 1, 11, 3, PAL.teal[4]);
+    p.rect(back ? 4 : 15, by + 1, 3, 6 + Math.abs(walk), PAL.teal[3]);
+    p.line(7, by - 1, 16, by - 1, PAL.teal[7]);
+    if (!back) { outlinedRect(p, side ? 15 : 2, by + 4, 5, 5, PAL.cream); p.line(side ? 16 : 3, by + 6, side ? 18 : 5, by + 6, PAL.teal[3]); }
+  }
   // Head: one strong silhouette, side nose, shaded hair, no mirrored lighting.
   lightBall(p, 11, hy + 7, 6, 6, hair);
   if (!back) {
@@ -170,7 +215,14 @@ function humanoid(p, id, dir, frame, blink, breathe) {
     p.line(8, hy + 6, 8, hy + 10, hair[Math.min(hair.length - 1, 5)]);
     if (id === 'botanist') { p.line(14, hy + 8, 14, hy + 16, hair[2]); p.set(14, hy + 16, PAL.rose[5]); }
   }
-  headwear(p, id, hy, dir, look);
+  if (id !== 'hero' || !hat || hat === 'fen-scarf' || hat === 'oracle-halo') headwear(p, id, hy, dir, look);
+  if (id === 'fen') {
+    p.line(5, hy + 3, 17, hy + 3, PAL.wood[1]);
+    for (const gx of side ? [11 + facing * 3] : [8, 13]) {
+      outlinedRect(p, gx, hy + 1, 4, 4, PAL.gold); p.set(gx + 1, hy + 2, PAL.teal[7]);
+    }
+  }
+  if (id === 'hero' && hat) heroHat(p, hat, hy, dir, breathe);
   if (id === 'hero' && !back) { p.line(20, 12 + bob, 20, 25, PAL.wood[2]); p.line(19, 12 + bob, 19, 24, PAL.wood[5]); lattice(p, 16, 5 + bob, breathe); }
 }
 function critter(p, id, dir, frame, blink) {
@@ -210,9 +262,10 @@ export function drawCharacter(ctx, id, x, y, opts = {}) {
   const chosen = CHARACTER_IDS.includes(id) ? id : 'hero', dir = DIRS.includes(opts.dir) ? opts.dir : 'down';
   const frame = opts.frame == null || opts.frame < 0 ? -1 : Math.floor(opts.frame) % 4, t = opts.t ?? 0;
   const blink = Math.floor(t * 8 + CHARACTER_IDS.indexOf(chosen) * 3) % 39 === 0, breathe = Math.floor(t * 2) % 2;
-  const image = spriteCache(`character-v2:${chosen}:${dir}:${frame}:${+blink}:${breathe}`, 24, 28, (p) => {
+  const hat = chosen === 'hero' && HAT_IDS.includes(opts.hat) ? opts.hat : null;
+  const image = spriteCache(`character-v3:${chosen}:${dir}:${frame}:${+blink}:${breathe}:${hat}`, 24, 28, (p) => {
     if (chosen === 'cat' || chosen === 'frog') critter(p, chosen, dir, frame, blink);
-    else humanoid(p, chosen, dir, frame, blink, breathe);
+    else humanoid(p, chosen, dir, frame, blink, breathe, hat);
   });
   const shade = spriteCache('character-shadow-v2', 18, 5, (p) => p.ellipseDither(9, 2, 7, 2, PAL.shadow, .65));
   ctx.drawImage(shade, Math.round(x - 9), Math.round(y - 3));
@@ -220,7 +273,7 @@ export function drawCharacter(ctx, id, x, y, opts = {}) {
 }
 
 function characterGallery(ctx, screen, t, page = 0) {
-  const ids = CHARACTER_IDS.slice((page % 6) * 2, (page % 6) * 2 + 2), portrait = screen.w < 300;
+  const ids = CHARACTER_IDS.slice((page % 7) * 2, (page % 7) * 2 + 2), portrait = screen.w < 300;
   ctx.fillStyle = PAL.night[1]; ctx.fillRect(0, 0, screen.w, screen.h);
   drawText(ctx, 'The people of Lighthouse Point', 8, 6, { color: PAL.cream[3] });
   drawText(ctx, 'Four directions / four native-pixel steps', 8, 19, { font: 'small', color: PAL.ui.dim });
@@ -238,4 +291,15 @@ function characterGallery(ctx, screen, t, page = 0) {
     });
   });
 }
-export const galleries = { characters: characterGallery };
+function hatsGallery(ctx, screen, t, page = 0) {
+  const hat = HAT_IDS[page % HAT_IDS.length], portrait = screen.portrait ?? screen.w < 300;
+  ctx.fillStyle = PAL.night[1]; ctx.fillRect(0, 0, screen.w, screen.h);
+  drawText(ctx, hat, 8, 6, { color: PAL.gold[6] });
+  drawText(ctx, 'All directions / four walk poses / cosmetic only', 8, 20, { font: 'small', color: PAL.ui.dim });
+  DIRS.forEach((dir, i) => {
+    const y = 65 + i * (portrait ? 63 : 40);
+    drawText(ctx, dir.toUpperCase(), 8, y - 14, { font: 'small', color: PAL.ui.dim });
+    for (let f = 0; f < 4; f++) drawCharacter(ctx, 'hero', 80 + f * (portrait ? 35 : 70), y, { t, dir, frame: f, hat });
+  });
+}
+export const galleries = { characters: characterGallery, hats: hatsGallery };

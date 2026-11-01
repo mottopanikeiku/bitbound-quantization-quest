@@ -36,6 +36,14 @@ function characterBust(p, id, mood, blink) {
   const skin = [PAL.skin[Math.max(0, look.skin - 3)], PAL.skin[Math.max(0, look.skin - 1)], PAL.skin[look.skin], PAL.skin[Math.min(6, look.skin + 1)]];
   const isKid = id === 'kid', y = isKid ? 20 : 18;
   if (id === 'hiker') { face(p, [[4, 24], [10, 21], [29, 21], [35, 25], [35, 37], [4, 37]], PAL.sand, .6); p.rect(5, 25, 5, 11, PAL.sand[3]); }
+  if (id === 'fen') {
+    face(p, [[2, 16], [9, 13], [35, 17], [37, 37], [2, 37]], PAL.wood, .5);
+    for (let i = 0; i < 3; i++) {
+      face(p, [[3 + i * 10, 8 + i % 2 * 3], [8 + i * 10, 6 + i % 2 * 3], [11 + i * 10, 30], [4 + i * 10, 32]], PAL.cream, .8);
+      p.line(4 + i * 10, 14, 8 + i * 10, 13, PAL.teal[3]);
+      p.ellipse(6 + i * 10, 9 + i % 2 * 3, 3, 2, PAL.gold[3]);
+    }
+  }
   ball(p, 20, 37, isKid ? 12 : 16, 12, coat);
   p.rect(17, y + 9, 6, 6, PAL.skin[look.skin]);
   face(p, [[10, 29], [17, 27], [20, 32], [23, 27], [30, 29], [27, 37], [13, 37]], coat, .57, false);
@@ -65,6 +73,11 @@ function characterBust(p, id, mood, blink) {
   } else if (id === 'scholar') {
     p.line(12, 29, 14, 38, PAL.gold[5]); p.line(26, 29, 24, 38, PAL.gold[4]);
     face(p, [[29, 31], [35, 31], [36, 38], [28, 38]], PAL.cream, .8); p.line(30, 34, 34, 34, PAL.cream[0]);
+  }
+  if (id === 'fen') {
+    face(p, [[8, 28], [17, 30], [29, 27], [32, 31], [18, 35], [7, 32]], PAL.teal, .65);
+    face(p, [[28, 31], [33, 30], [34, 38], [28, 36]], PAL.teal, .5);
+    p.line(29, 35, 32, 35, PAL.gold[6]);
   }
   // Hair first; the asymmetrical forelock and sideburns make the face a bust,
   // rather than a big walking-sprite head pasted into a frame.
@@ -105,6 +118,13 @@ function characterBust(p, id, mood, blink) {
     ball(p, 20, 10, 13, 8, PAL.violet); path(p, [[9, 9], [15, 14], [25, 16], [31, 12]], PAL.violet[6]);
     path(p, [[10, 6], [19, 10], [29, 11]], PAL.violet[3]);
     face(p, [[17, 10], [20, 7], [24, 10], [20, 15]], PAL.teal, .7); p.set(19, 9, PAL.teal[9]);
+  }
+  if (id === 'fen') {
+    p.line(9, 11, 30, 11, PAL.wood[1]);
+    for (const x of [13, 24]) {
+      ball(p, x, 11, 5, 4, PAL.gold); ball(p, x, 11, 3, 2, PAL.teal); p.set(x - 1, 10, PAL.cream[3]);
+    }
+    p.line(18, 11, 19, 11, PAL.gold[5]);
   }
   if (id === 'librarian' || id === 'scholar') {
     const glasses = id === 'librarian' ? [15, 25] : [25];
@@ -274,9 +294,9 @@ export function drawOracleCore(ctx, x, y, { t = 0, glow = 1 } = {}) {
   ctx.drawImage(canvas, Math.round(x), Math.round(y));
 }
 function portraitsGallery(ctx, screen, t, page = 0) {
-  const pageId = page % 7, ids = PORTRAIT_IDS.slice(pageId * 3, pageId * 3 + 3), portrait = screen.w < 300;
+  const pageId = page % 8, ids = PORTRAIT_IDS.slice(pageId * 3, pageId * 3 + 3), portrait = screen.w < 300;
   ctx.fillStyle = PAL.night[1]; ctx.fillRect(0, 0, screen.w, screen.h);
-  if (pageId === 6) {
+  if (pageId === 7) {
     drawText(ctx, 'Light without a frame', 8, 6, { color: PAL.cream[3] });
     drawText(ctx, 'Native 32 x 32 / transparent surround', 8, 19, { font: 'small', color: PAL.ui.dim });
     [0, .5, 1].forEach((glow, i) => {
