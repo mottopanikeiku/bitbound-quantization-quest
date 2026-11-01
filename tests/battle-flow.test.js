@@ -44,7 +44,7 @@ test('battle owns save copies; free menus do not spend turns or refill bytes', (
   assert.equal(battle.gear.zero, true);
   assert.equal(battle.stats.turns, 0);
   tick(battle, ['cancel']);
-  choose(battle, 4);
+  choose(battle, 5);
   assert.equal(battle.phase, 'scan');
   assert.equal(battle.canPause, false);
   tick(battle, ['confirm']);
@@ -70,7 +70,7 @@ test('unaffordable SNAP stays in menu; brace restores bytes and consumes one tur
 test('snack heals half max HP, decrements a snack and consumes a turn', () => {
   const { battle } = fixture();
   battle.hero.hp = 3;
-  choose(battle, 3);
+  choose(battle, 4);
   assert.equal(battle.hero.hp, 23);
   assert.equal(battle.hero.snacks, 2);
   assert.equal(battle.stats.turns, 1);
@@ -103,7 +103,7 @@ test('Spotlight chosen channels and Balance alpha survive range preparation', ()
 
 test('Brine SCAN and preview hide live fidelity but reveal calibration statistics', () => {
   const { battle } = fixture('brine', 2);
-  choose(battle, 4);
+  choose(battle, 5);
   assert.equal(battle.gridModel.hidden, true);
   assert.equal(battle.gridModel.fidelity, undefined);
   assert.ok(battle.scanLines.some(line => line.includes('90% of past calm values')));
@@ -204,11 +204,11 @@ test('new result coaches queue in order and cannot be skipped by a held confirm'
   tick(battle, [], 5, ['confirm']);
   assert.match(battle.message, /White dots are true values/);
   tick(battle, ['confirm'], 0.3);
-  assert.equal(battle.message, COACH.nib.firstSnap);
+  assert.equal(battle.message, COACH.nib.technique, 'the identical firstSnap grid explanation is not repeated');
   tick(battle, ['confirm'], 0.1);
-  assert.equal(battle.message, COACH.nib.firstSnap);
-  tick(battle, ['confirm'], 0.2);
   assert.equal(battle.message, COACH.nib.technique);
+  tick(battle, ['confirm'], 0.2);
+  assert.equal(battle.message, COACH.nib.perfect);
 });
 
 test('SCAN retains prior snapshot, range and tethers after the next essence appears', () => {

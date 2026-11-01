@@ -2,14 +2,17 @@
 import { PAL } from '../art/palette.js';
 import { drawBattleBackground } from '../art/backgrounds.js';
 import { drawBattleCreature, battleCreatureSize, drawFriendEmblem } from '../art/creatures.js';
+import { drawCharacter } from '../art/characters.js';
 import { drawText, wrapText, FONT_METRICS } from '../engine/font.js';
 import { drawBar, drawMenu, drawWindow, drawIcon, drawCursor } from '../ui/kit.js';
 import { drawGridPanel } from './gridviz.js';
 import { clamp } from '../engine/util.js';
 import { formatFidelity } from './metrics.js';
+import { drawGradeStamp } from '../art/vfx.js';
+import { ASSISTS, assistAvailability } from './assists.js';
+import { TALLY_STEPS, TALLY_DURATION } from './grade.js';
 
-const COMMANDS = ['SNAP', 'TUNE', 'GUARD', 'SNACK', 'SCAN', 'FLEE'];
-const COMMAND_HINTS = ['Lock a grid. Turn values into a spell.', 'Free: choose bits and techniques.', 'Brace next hit ×0.5. Recover 12 B.', 'Heal half your max HP. Uses a turn.', 'Free: inspect the essence and a hint.', 'Leave safely. This foe will reset.'];
+const COMMAND_HINTS = ['Lock a grid. Turn values into a spell.', 'Free: choose bits and techniques.', 'Brace next hit. Recover 12 B charge.', 'One partial plan per friend, per battle.', 'Heal half your max HP. Uses a turn.', 'Free: inspect the essence and a hint.'];
 
 /**
  * Panels, creature and grid keep their designed composition inside a centred box; on larger or
@@ -102,13 +105,18 @@ function drawHeader(ctx, battle, layout, t) {
   const r = layout.header;
   drawWindow(ctx, r.x, r.y, r.w, r.h, 'glass', t);
   drawText(ctx, battle.foe.name, r.x + 7, r.y + 4, { color: PAL.ui.text });
-  const hp = `${battle.foeHp}/${battle.foe.hp}`;
+  const mode = layout.portrait && battle.mode !== 'campaign' ? battle.mode === 'well' ? 'B' + battle.well.depth : battle.mode.toUpperCase() : '';
+  const packetComparison = battle.mode === 'duel' && battle.phase === 'cast-result' && battle.essence.inputs;
+  const hp = packetComparison ? `${battle.lastSpell.cost} B / FP32 ${battle.fenPayload.bytes} B` : battle.mode === 'duel' ? `ROUND ${battle.duelAccepted}/3` : `${mode ? mode + ' ' : ''}${battle.foeHp}/${battle.foe.hp}`;
   drawText(ctx, hp, r.x + r.w - 7, r.y + 5, { font: 'small', align: 'right', color: PAL.ui.dim });
-  if (battle.threadHp) {
+  if (packetComparison) {
+    drawBar(ctx, r.x + 7, r.y + r.h - 11, r.w - 14, 3, battle.lastSpell.cost, battle.fenPayload.bytes, { fill: PAL.ui.bytes });
+    drawBar(ctx, r.x + 7, r.y + r.h - 6, r.w - 14, 3, battle.fenPayload.bytes, battle.fenPayload.bytes, { fill: PAL.ui.dim });
+  } else if (battle.threadHp) {
     battle.threadHp.forEach((value, i) => drawBar(ctx, r.x + 7 + i * Math.floor((r.w - 18) / 3), r.y + r.h - 7, Math.floor((r.w - 24) / 3), 3, value, battle.threadMax[i], { fill: [PAL.rose[5], PAL.water[7], PAL.gold[6]][i] }));
-  } else drawBar(ctx, r.x + 7, r.y + r.h - 7, r.w - 14, 3, battle.foeHp, battle.foe.hp, { fill: battle.bossPhase === 2 ? PAL.ui.gold : PAL.ui.bad });
+  } else drawBar(ctx, r.x + 7, r.y + r.h - 7, r.w - 14, 3, battle.mode === 'duel' ? battle.duelAccepted : battle.foeHp, battle.foe.hp, { fill: battle.mode === 'duel' ? PAL.ui.good : battle.bossPhase === 2 ? PAL.ui.gold : PAL.ui.bad });
   if (!layout.portrait) {
-    drawText(ctx, battle.guardian ? 'GUARDIAN' : 'PRACTICE', r.x + r.w + 9, r.y + 3, { font: 'small', color: PAL.ui.dim });
+    drawText(ctx, battle.mode === 'well' ? 'WELL B' + battle.well.depth : battle.mode === 'duel' ? 'DUEL ' + battle.duelAccepted + '/3' : battle.mode === 'practice' ? 'PRACTICE' : battle.guardian ? 'GUARDIAN' : 'STATIC', r.x + r.w + 9, r.y + 3, { font: 'small', color: PAL.ui.dim });
     if (battle.bossPhase === 2) drawText(ctx, 'PHASE 2', r.x + r.w + 9, r.y + 12, { font: 'small', color: PAL.ui.gold });
     const cost = battle.preview?.cost ?? 0;
     const chip = layout.cost;
@@ -120,23 +128,46 @@ function drawHeader(ctx, battle, layout, t) {
 
 function drawParty(ctx, battle, layout, t) {
   const r = layout.party;
-  drawWindow(ctx, r.x, r.y, r.w, r.h, battle.braced ? 'gold' : 'default', t);
-  drawIcon(ctx, battle.braced ? 'shield' : 'heart', r.x + 7, r.y + 6);
-  drawText(ctx, 'YOU', r.x + 19, r.y + 6, { font: 'small', color: PAL.ui.gold });
-  const friends = battle.game.state.friends ?? [];
+  drawWindow(ctx, r.x, r.y, r.w, r.h, battle.braced || battle.resonance === 4 ? 'gold' : 'default', t);
+  const impact = battle.heroImpact;
+  if (impact && impact.age < impact.flash) {
+    ctx.strokeStyle = impact.grade === 'perfect' ? PAL.ui.gold : PAL.ui.bad;
+    ctx.lineWidth = 1;
+    const shake = battle.game.reducedMotion || impact.grade === 'perfect' ? 0 : Math.round(Math.sin(impact.age * 110) * (battle.attack.charge ? 2 : 1) * Math.max(0, 1 - impact.age / 0.14));
+    ctx.strokeRect(r.x + 1 + shake, r.y + 1, r.w - 2, r.h - 2);
+  }
+  if (battle.hero.hp < battle.limits.maxHp * 0.25) {
+    ctx.strokeStyle = PAL.ui.hpLow;
+    ctx.globalAlpha = battle.game.reducedMotion ? 0.7 : 0.55 + Math.sin(t * 2) * 0.15;
+    ctx.strokeRect(r.x, r.y, r.w, r.h);
+    ctx.globalAlpha = 1;
+  }
+  const reduced = battle.game.reducedMotion;
+  const shake = !reduced && impact && impact.grade !== 'perfect' ? Math.round(Math.sin(impact.age * 110) * (battle.attack.charge ? 2 : 1) * Math.max(0, 1 - impact.age / (battle.attack.charge ? 0.14 : 0.1))) : 0;
+  drawCharacter(ctx, 'hero', r.x + 17 + shake, r.y + 43, { dir: 'right', frame: -1, hat: battle.game.state.hat, t: !reduced && impact && impact.age < impact.pose ? impact.time : t });
+  if (impact && impact.grade === 'perfect' && impact.age < impact.flash) drawIcon(ctx, 'shield', r.x + 15, r.y + 15);
+  drawText(ctx, 'YOU', r.x + 7, r.y + 6, { font: 'small', color: PAL.ui.gold });
+  const friends = battle.friends ?? [];
   friends.forEach((friend, i) => {
     const size = layout.portrait ? 12 : 10;
     const x = r.x + 44 + i * (size + 2);
     drawFriendEmblem(ctx, friend, x, r.y + 4, { t, size });
+    if ((battle.game.state.bonds?.[friend] ?? 0) >= 8) { ctx.strokeStyle = PAL.ui.gold; ctx.strokeRect(x - 1, r.y + 3, size + 2, size + 2); }
   });
-  const labelX = r.x + 7;
-  const meterX = r.x + 45;
-  const meterW = r.w - 53;
+  const labelX = r.x + 31;
+  const meterX = r.x + 66;
+  const meterW = r.w - 74;
   drawText(ctx, `HP ${battle.hero.hp}`, labelX, r.y + 19, { font: 'small', color: battle.hero.hp < battle.limits.maxHp * 0.3 ? PAL.ui.warn : PAL.ui.text });
   drawBar(ctx, meterX, r.y + 21, meterW, 5, battle.hero.hp, battle.limits.maxHp, { fill: battle.hero.hp < battle.limits.maxHp * 0.3 ? PAL.ui.hpLow : PAL.ui.hp });
   drawText(ctx, `${battle.hero.bytes} B`, labelX, r.y + 31, { font: 'small', color: PAL.ui.bytes });
   drawBar(ctx, meterX, r.y + 33, meterW, 5, battle.hero.bytes, battle.limits.maxBytes, { fill: PAL.ui.bytes });
-  if (!layout.portrait) drawText(ctx, `${battle.hero.snacks} snacks  ·  +4 B / turn`, r.x + 7, r.y + 42, { font: 'small', color: PAL.ui.dim });
+  const pipX = layout.portrait ? r.x + r.w - 49 : r.x + r.w - 39;
+  const pipY = layout.portrait ? r.y + 6 : r.y + 42;
+  for (let i = 0; i < 4; i++) {
+    ctx.fillStyle = i < battle.resonance ? PAL.ui.gold : PAL.night[4];
+    ctx.fillRect(pipX + i * 8, pipY, 5, 5);
+  }
+  if (!layout.portrait) drawText(ctx, battle.resonance === 4 ? 'FULL RESONANCE' : `${battle.hero.snacks} snacks · R ${battle.resonance}/4`, r.x + 31, r.y + 42, { font: 'small', color: battle.resonance === 4 ? PAL.ui.gold : PAL.ui.dim });
 }
 
 export function battlePrompt(battle) {
@@ -146,7 +177,12 @@ export function battlePrompt(battle) {
   if (battle.phase === 'menu') return touch ? 'D-pad choose · A select · START pause' : 'ARROWS choose · ENTER confirm · N notes';
   if (battle.phase === 'tune') return `← → change · ${act} toggle · ${back} ready`;
   if (battle.phase === 'scan') return battle.lastCast ? `←→ Current/Last · ↑↓ scroll · ${back} back` : `↑↓ scroll · ${act}/${back} return`;
-  if (battle.phase === 'result') return `${act} continue`;
+  if (battle.phase === 'friends') return `↑↓ friend · ←→ plan · ${act} arm · ${back} back`;
+  if (battle.phase === 'result') {
+    if (battle.result?.grade && battle.tallyAge < TALLY_DURATION) return `${act} finish tally`;
+    if (battle.mode === 'practice' || battle.mode === 'duel') return `←→ ${battle.resultChoice ? 'Continue · >AGAIN' : '>CONTINUE · Again'} · ${act}`;
+    return `${act} continue`;
+  }
   if (['lock', 'balance'].includes(battle.phase)) return touch ? 'A lock · hold STEADY · B back' : 'ENTER lock · SHIFT steady · ESC back';
   if (battle.phase === 'spotlight') return `${touch ? 'D-pad' : 'Arrows'} channel · ${act} keep · ${back} back`;
   if (battle.phase === 'budget') return `↑↓ head · ←→ bits · ${act} ready`;
@@ -190,6 +226,31 @@ function drawTune(ctx, battle, layout, t) {
   if (items.length > visible) drawText(ctx, `${start + 1}–${Math.min(start + visible, items.length)}/${items.length}`, r.x + listW - 7, r.y + 7, { font: 'small', align: 'right', color: PAL.ui.dim });
   const grid = layout.portrait ? { x: r.x, y: r.y + listH + 4, w: r.w, h: r.h - listH - 4 } : { x: r.x + listW + 6, y: r.y, w: r.w - listW - 6, h: r.h };
   drawGridPanel(ctx, grid, battle.gridModel, t, { focusRow: layout.portrait, compact: true, showLegend: false, title: 'PREVIEW · IDEAL RANGE', reduced: battle.game.reducedMotion });
+}
+
+function drawFriends(ctx, battle, layout, t) {
+  const r = layout.work;
+  const listW = layout.portrait ? r.w : 170;
+  const visible = Math.min(battle.friends.length, layout.portrait ? 4 : 5);
+  const listH = layout.portrait ? 29 + visible * 15 : r.h;
+  drawWindow(ctx, r.x, r.y, listW, listH, 'gold', t);
+  drawText(ctx, 'FRIENDS · PARTIAL PLANS', r.x + 8, r.y + 6, { font: 'small', color: PAL.ui.gold });
+  const start = Math.max(0, battle.assistIndex - visible + 1);
+  for (let i = start; i < Math.min(battle.friends.length, start + visible); i++) {
+    const key = battle.friends[i];
+    const y = r.y + 22 + (i - start) * 15;
+    const available = assistAvailability(key, battle);
+    if (i === battle.assistIndex) drawCursor(ctx, r.x + 6, y, t);
+    const xp = battle.game.state.bonds?.[key] ?? 0;
+    const level = xp >= 8 ? 3 : xp >= 3 ? 2 : 1;
+    drawFriendEmblem(ctx, key, r.x + 16, y - 2, { t, size: 12, bondLevel: level });
+    if (level === 3) { ctx.strokeStyle = PAL.ui.gold; ctx.strokeRect(r.x + 15, y - 3, 14, 14); }
+    drawText(ctx, key.toUpperCase() + ' L' + level, r.x + 32, y, { font: 'small', color: available.ok ? PAL.ui.text : PAL.ui.dim });
+    drawText(ctx, battle.assistsUsed.includes(key) ? 'SPENT' : '1/1', r.x + listW - 8, y, { font: 'small', align: 'right', color: available.ok ? PAL.ui.good : PAL.ui.dim });
+  }
+  const key = battle.friends[battle.assistIndex];
+  const grid = layout.portrait ? { x: r.x, y: r.y + listH + 4, w: r.w, h: r.h - listH - 4 } : { x: r.x + listW + 6, y: r.y, w: r.w - listW - 6, h: r.h };
+  if (grid.h >= 42) drawGridPanel(ctx, grid, battle.gridModel, t, { compact: true, focusRow: layout.portrait, showLegend: false, reduced: battle.game.reducedMotion, title: ASSISTS[key].name.toUpperCase() });
 }
 
 export function scanPanelContent(battle, layout) {
@@ -244,7 +305,7 @@ function drawBudget(ctx, battle, layout, t) {
   const r = layout.work;
   drawWindow(ctx, r.x, r.y, r.w, r.h, 'gold', t);
   drawText(ctx, 'BIT BUDGET · THREE HEADS', r.x + 9, r.y + 7, { color: PAL.ui.gold });
-  const labels = ['CROWN', 'WING', 'TAIL'];
+  const labels = battle.essence.rows.map(row => row.label.split(' ')[0].toUpperCase());
   const sensitivities = battle.essence.sensitivities ?? [3, 1, 0.4];
   const listWidth = layout.portrait ? r.w : 174;
   for (let i = 0; i < 3; i++) {
@@ -309,9 +370,33 @@ function drawCast(ctx, battle, layout, t) {
   if (battle.phase === 'lock') title = `${battle.lockLabel} · ${battle.lockIndex + 1}/${battle.lockSteps.length}`;
   if (battle.phase === 'balance') title = `BALANCE · ALPHA ${battle.locks.alpha.toFixed(2)}`;
   if (battle.phase === 'cast-result') title = battle.lastSpell.fizzle ? 'FIZZLE · TOO NOISY' : battle.lastSpell.perfect ? 'PERFECT · 1.25×' : `${battle.lastDamage} DAMAGE · ${formatFidelity(battle.gridModel.scoreFidelity)}${battle.lastSpell.threadFidelities ? ' MIN THREAD' : ' FIDELITY'}`;
+  if (battle.phase === 'cast-result' && battle.mode === 'duel') title = `ROUND ${battle.duelAccepted}/3 · ${formatFidelity(battle.gridModel.scoreFidelity)} FIDELITY`;
   textBlock(ctx, title, r.x + 3, r.y - 12, r.w - 6, { font: 'small', maxLines: 1, color: battle.phase === 'cast-result' && battle.lastSpell.fizzle ? PAL.ui.error : PAL.ui.gold });
   drawGridPanel(ctx, r, battle.gridModel, t, { focusRow: layout.portrait, reduced: battle.game.reducedMotion, independentRows: battle.gear.groups || Boolean(battle.gear.budget), showLegend: !layout.portrait || r.h > 150 });
   if (layout.causality) drawCausality(ctx, battle, layout.causality, t);
+}
+
+function drawDuelComparison(ctx, battle, layout, t) {
+  if (battle.mode === 'duel' && battle.phase === 'cast-result' && !battle.essence.inputs) {
+    const judge = battle.duelJudgement;
+    const x = layout.grid.x + layout.grid.w + 8;
+    const box = layout.portrait ? { ...layout.reaction, h: 72 } : { x, y: 35, w: layout.work.x + layout.work.w - x, h: 72 };
+    // Draw last: the opaque result card covers the reaction sprite and its VFX.
+    ctx.save();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = PAL.night[1];
+    ctx.fillRect(box.x, box.y, box.w, box.h);
+    drawWindow(ctx, box.x, box.y, box.w, box.h, 'default', t);
+    drawText(ctx, `${judge.fidelityOk ? 'OK' : 'NO'} F ≥98.5%`, box.x + 5, box.y + 5, { font: 'small', color: judge.fidelityOk ? PAL.ui.good : PAL.ui.warn });
+    drawText(ctx, 'FP32 F ' + formatFidelity(battle.fenPayload.fidelity), box.x + box.w - 5, box.y + 5, { font: 'small', align: 'right', color: PAL.ui.dim });
+    drawText(ctx, `${judge.packetOk ? 'OK' : 'NO'} ≤${judge.cap} B · ${battle.duelAccepted}/3`, box.x + 5, box.y + 15, { font: 'small', color: judge.packetOk ? PAL.ui.good : PAL.ui.warn });
+    drawText(ctx, `YOU ${judge.cost} B / FP32 ${battle.fenPayload.bytes} B`, box.x + 5, box.y + 26, { font: 'small', color: PAL.ui.bytes });
+    drawBar(ctx, box.x + 5, box.y + 36, box.w - 10, 3, judge.cost, battle.fenPayload.bytes, { fill: PAL.ui.bytes });
+    drawBar(ctx, box.x + 5, box.y + 41, box.w - 10, 3, battle.fenPayload.bytes, battle.fenPayload.bytes, { fill: PAL.ui.dim });
+    drawText(ctx, 'TOY PAYLOAD BASELINE', box.x + 5, box.y + 49, { font: 'small', color: PAL.ui.dim });
+    drawText(ctx, 'NOT A HARDWARE MEASUREMENT', box.x + 5, box.y + 59, { font: 'small', color: PAL.ui.dim });
+    ctx.restore();
+  }
 }
 
 function drawEnemyTurn(ctx, battle, layout, t) {
@@ -339,50 +424,78 @@ function drawEnemyTurn(ctx, battle, layout, t) {
 
 function drawResult(ctx, battle, layout, t) {
   const won = battle.result.outcome === 'won';
-  const r = layout.portrait ? layout.work : layout.result;
-  const y = layout.portrait ? Math.max(layout.foe.y + 8, r.y + Math.floor(r.h * 0.48)) : r.y;
-  const h = Math.min(layout.portrait ? 89 : 102, r.y + r.h - y);
-  drawWindow(ctx, r.x, y, r.w, h, won ? 'gold' : 'default', t);
-  const title = won ? battle.guardian ? `${battle.foe.name} became your friend!` : 'The Static drifts away!' : battle.result.outcome === 'lost' ? 'A light will guide you home.' : 'You slip away safely.';
-  textBlock(ctx, title, r.x + 9, y + 7, r.w - 18, { color: won ? PAL.ui.gold : PAL.ui.text, maxLines: 2 });
-  const recapY = y + 33;
-  textBlock(ctx, battle.recap, r.x + 9, recapY, r.w - 18, { font: 'small', maxLines: 3, color: PAL.ui.dim });
-  if (h > 65) drawText(ctx, `${battle.stats.turns} turns · ${battle.stats.perfects} perfect · ${battle.stats.fizzles} fizzle`, r.x + 9, y + h - 13, { font: 'small', color: PAL.ui.good });
+  const r = layout.work;
+  drawWindow(ctx, r.x, r.y, r.w, r.h, won ? 'gold' : 'default', t);
+  const grade = battle.result.grade;
+  const title = battle.mode === 'duel' ? won ? 'FEN · THREE AGREED ROUNDS!' : 'THE MAPS CAN WAIT'
+    : battle.mode === 'practice' ? 'PRACTICE COMPLETE'
+    : battle.mode === 'well' ? 'WELL B' + battle.well.depth + (won ? ' CLEARED' : ' · LANTERN HOME')
+    : won ? battle.guardian ? `${battle.foe.name} became your friend!` : 'The Static drifts away!' : battle.result.outcome === 'lost' ? 'A light will guide you home.' : 'You slip away safely.';
+  textBlock(ctx, (battle.recognition ? battle.recognition + ' · ' : '') + title, r.x + 9, r.y + 6, r.w - 18, { font: 'small', color: won ? PAL.ui.gold : PAL.ui.text, maxLines: 2 });
+  if (!grade) {
+    textBlock(ctx, battle.mode === 'duel' ? `${battle.duelAccepted}/3 rounds · ${battle.stats.casts} casts. Toy FP32 payload baseline, not a hardware measurement.` : battle.recap, r.x + 9, r.y + 34, r.w - 18, { font: 'small', maxLines: 4, color: PAL.ui.dim });
+    return;
+  }
+  const rowY = r.y + 25;
+  const rowH = layout.portrait ? 20 : 13;
+  const totalShown = battle.tallyAge >= TALLY_STEPS[5];
+  for (let i = 0; i < grade.lines.length; i++) {
+    const line = grade.lines[i];
+    const shown = battle.tallyAge >= TALLY_STEPS[i + 1];
+    drawText(ctx, line.label, r.x + 9, rowY + i * rowH, { font: 'small', color: shown ? PAL.ui.text : PAL.ui.dim });
+    // The stamp is 40 px wide; reserve its column throughout the tally and landing.
+    if (shown) drawText(ctx, `${line.value} · ${line.points.toFixed(1)}`, r.x + r.w - 58, rowY + i * rowH, { font: 'small', align: 'right', color: PAL.ui.gold });
+  }
+  const footerY = rowY + 4 * rowH;
+  if (totalShown) {
+    drawText(ctx, `${grade.score}/100 · R ${battle.maxResonance}/4`, r.x + 9, footerY, { font: 'small', color: PAL.ui.gold });
+    drawGradeStamp(ctx, r.x + r.w - 26, footerY + 16, grade.letter, Math.max(0, battle.tallyAge - TALLY_STEPS[5]), { scale: 1, reduced: battle.game.reducedMotion });
+    const detail = grade.unmet.length ? grade.unmet.join(' · ') : battle.newBest ? 'NEW BEST · comparable foe record' : 'Won-fight mastery record';
+    if (battle.tallyAge >= TALLY_DURATION) textBlock(ctx, detail + (battle.assistsUsed.length ? ' · Assisted: ' + battle.assistsUsed.join(', ') : ' · Unassisted'), r.x + 9, footerY + 12, r.w - 57, { font: 'small', color: battle.newBest ? PAL.ui.gold : PAL.ui.dim, maxLines: layout.portrait ? 3 : 2 });
+  }
 }
 
 export function drawBattleView(ctx, screen, battle, t) {
-  const layout = battleLayout(screen, battle.foeId, Boolean(battle.essence.inputs));
+  const layout = battleLayout(screen, battle.artId ?? battle.foeId, Boolean(battle.essence.inputs));
   const casting = ['lock', 'balance', 'snap', 'cast-result'].includes(battle.phase);
   const visibleStage = casting ? layout.castStage : layout.stage;
-  drawBattleBackground(ctx, screen, battle.foe.background, t, { stage: visibleStage, reduced: battle.game.reducedMotion, intensity: battle.bossPhase === 2 ? 1.15 : 0.8 });
+  drawBattleBackground(ctx, screen, battle.foe.background, t, { depth: battle.well?.depth, stage: visibleStage, reduced: battle.game.reducedMotion, intensity: battle.bossPhase === 2 ? 1.15 : 0.8 });
   const offset = battle.vfx?.offset ?? { x: 0, y: 0 };
   const cropped = casting && (layout.portrait || Boolean(battle.essence.inputs));
   const creatureX = visibleStage.x + Math.floor(visibleStage.w / 2);
-  const creatureY = cropped ? visibleStage.y + battleCreatureSize(battle.foeId).h - 12 : layout.foe.y;
+  const creatureY = cropped ? visibleStage.y + battleCreatureSize(battle.artId ?? battle.foeId).h - 12 : layout.foe.y;
   if (cropped) {
     ctx.save(); ctx.beginPath();
     ctx.rect(visibleStage.x, visibleStage.y, visibleStage.w, visibleStage.h); ctx.clip();
   }
-  drawBattleCreature(ctx, battle.foeId, Math.round(creatureX + offset.x), Math.round(creatureY + offset.y), {
-    t, corrupted: !(battle.result?.outcome === 'won' && battle.phaseAge > 0.48),
-    flash: battle.phase === 'snap' ? Math.max(0, 1 - battle.phaseAge * 4) : battle.phase === 'result' && battle.result.outcome === 'won' ? Math.max(0, 1 - Math.abs(battle.phaseAge - 0.48) * 3) : 0,
-    hurt: battle.phase === 'cast-result' && battle.phaseAge < 0.3 ? 0.7 : 0,
-    squash: battle.phase === 'telegraph' ? Math.sin(battle.phaseAge * 6) * 0.15 : 0,
+  const impact = battle.impact;
+  const reduced = battle.game.reducedMotion;
+  drawBattleCreature(ctx, battle.artId ?? battle.foeId, Math.round(creatureX + offset.x), Math.round(creatureY + offset.y), {
+    t: !reduced && impact && impact.age < impact.pose ? impact.time : t,
+    golden: battle.golden,
+    corrupted: battle.mode !== 'duel' && !(battle.result?.outcome === 'won' && battle.phaseAge > 0.18),
+    flash: !reduced && impact && impact.age < impact.flash ? 1 - impact.age / impact.flash : 0,
+    hurt: !reduced && impact && impact.age < impact.pose ? 0.7 : 0,
+    squash: !reduced && battle.phase === 'telegraph' ? Math.sin(battle.phaseAge * 6) * 0.15 : 0,
     phase: battle.bossPhase,
   });
+  if (reduced && impact && impact.age < 0.12) {
+    ctx.strokeStyle = PAL.ui.gold; ctx.strokeRect(visibleStage.x, visibleStage.y, visibleStage.w, visibleStage.h);
+  }
   if (cropped) ctx.restore();
   drawHeader(ctx, battle, layout, t);
   if (battle.phase === 'menu') {
     const r = layout.command;
     drawWindow(ctx, r.x, r.y, r.w, r.h, 'default', t);
-    drawMenu(ctx, r.x + 7, r.y + 8, COMMANDS, battle.menu, { cols: 2, colWidth: Math.floor((r.w - 13) / 2), rowHeight: 17, t });
+    drawMenu(ctx, r.x + 7, r.y + 8, battle.commands, battle.menu, { cols: 2, colWidth: Math.floor((r.w - 13) / 2), rowHeight: 17, t, disabled: !battle.friends?.length || battle.mode === 'duel' ? new Set([3]) : new Set() });
     drawText(ctx, battle.charging ? 'CHARGE INCOMING · BRACE!' : `TURN ${battle.stats.turns + 1} · ${battle.preview?.cost ?? 0} B SNAP`, r.x + 8, r.y + r.h - 13, { font: 'small', color: battle.charging ? PAL.ui.warn : PAL.ui.bytes });
     if (!layout.portrait) {
       const hint = layout.commandHint;
       drawWindow(ctx, hint.x, hint.y, hint.w, hint.h, 'glass', t);
-      textBlock(ctx, battle.menu === 1 && battle.tuneItems.length === 1 ? 'Grid Stones unlock new tuning tools.' : COMMAND_HINTS[battle.menu], hint.x + 6, hint.y + 6, hint.w - 12, { font: 'small', maxLines: 2, color: PAL.ui.dim });
+      textBlock(ctx, battle.menu === 3 && !battle.friends?.length ? 'Befriend a guardian first.' : battle.menu === 3 && battle.mode === 'duel' ? 'Fen’s duels are yours alone.' : battle.menu === 1 && battle.tuneItems.length === 1 ? 'Grid Stones unlock new tuning tools.' : COMMAND_HINTS[battle.menu], hint.x + 6, hint.y + 6, hint.w - 12, { font: 'small', maxLines: 2, color: PAL.ui.dim });
     }
   } else if (battle.phase === 'tune') drawTune(ctx, battle, layout, t);
+  else if (battle.phase === 'friends') drawFriends(ctx, battle, layout, t);
   else if (battle.phase === 'scan') drawScan(ctx, battle, layout, t);
   else if (battle.phase === 'spotlight') drawSpotlight(ctx, battle, layout, t);
   else if (battle.phase === 'budget') drawBudget(ctx, battle, layout, t);
@@ -395,4 +508,5 @@ export function drawBattleView(ctx, screen, battle, t) {
     ctx.save(); ctx.beginPath(); ctx.rect(visibleStage.x, visibleStage.y, visibleStage.w, visibleStage.h); ctx.clip();
     battle.vfx?.draw(ctx); ctx.restore();
   } else battle.vfx?.draw(ctx);
+  drawDuelComparison(ctx, battle, layout, t);
 }

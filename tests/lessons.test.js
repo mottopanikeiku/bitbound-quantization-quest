@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { LESSONS, GLOSSARY, REAL_WORLD, FACTS, COACH, SOURCES } from '../src/content/lessons.js';
 import { GUARDIANS, TECHNIQUE_ORDER, TECHNIQUES, ZONES, heroStats } from '../src/content/game-data.js';
 import { kvCacheBytes } from '../src/quantization.js';
-import { Battle } from '../src/battle/battle.js';
+import { Battle, COMMANDS } from '../src/battle/battle.js';
 import { newGame } from '../src/state.js';
 import { LessonCard } from '../src/ui/lesson.js';
 
@@ -59,9 +59,10 @@ function press(battle, key) {
   });
 }
 
-function command(battle, index) {
+function command(battle, name) {
   assert.equal(battle.phase, 'menu');
-  battle.menu = index;
+  battle.menu = COMMANDS.indexOf(name);
+  assert.ok(battle.menu >= 0, `${name} is a battle command`);
   press(battle, 'confirm');
 }
 
@@ -176,7 +177,7 @@ test('Spotlight instructions follow real SCAN numbers, TUNE count and SNAP selec
     assert.match(plain(COACH[id].intro), /SCAN.*hot channel numbers/);
     assert.doesNotMatch(plain(COACH[id].intro), /SCAN.*bars/);
     const battle = coachBattle(id, 4);
-    command(battle, 4);
+    command(battle, 'SCAN');
     assert.equal(battle.phase, 'scan');
     const hot = battle.salience.map((value, index) => ({ value, index }))
       .sort((a, b) => b.value - a.value || a.index - b.index).slice(0, 2).map(item => item.index);
@@ -184,7 +185,7 @@ test('Spotlight instructions follow real SCAN numbers, TUNE count and SNAP selec
     assert.ok(numbers, `${id}: SCAN supplies channel numbers`);
     for (const index of hot) assert.match(numbers, new RegExp(`\\b${index + 1}\\b`));
     press(battle, 'cancel');
-    command(battle, 1);
+    command(battle, 'TUNE');
     assert.equal(battle.phase, 'tune');
     battle.tuneIndex = battle.tuneItems.findIndex(item => item.key === 'spotlight');
     assert.ok(battle.tuneIndex >= 0);
@@ -193,7 +194,7 @@ test('Spotlight instructions follow real SCAN numbers, TUNE count and SNAP selec
     assert.equal(battle.gear.spotlight, 2, 'TUNE sets only the number kept');
     assert.equal(battle.phase, 'tune', 'TUNE does not open the channel picker');
     press(battle, 'cancel');
-    command(battle, 0);
+    command(battle, 'SNAP');
     assert.equal(battle.phase, 'spotlight', 'SNAP opens the actual channel picker');
     assert.deepEqual(battle.locks.protected, []);
     for (const index of hot) {
@@ -211,14 +212,14 @@ test('Bit Budget copy points to SNAP, not TUNE, for individual head bit controls
   for (const id of ['auric', 'static-6']) {
     assert.match(plain(COACH[id].technique), /TUNE Bit Budget ON, then SNAP.*per-head bits/);
     const battle = coachBattle(id, 6);
-    command(battle, 1);
+    command(battle, 'TUNE');
     battle.tuneIndex = battle.tuneItems.findIndex(item => item.key === 'budget');
     assert.ok(battle.tuneIndex >= 0);
     press(battle, 'right');
     assert.equal(battle.phase, 'tune');
     assert.deepEqual(battle.gear.budget, [4, 3, 2]);
     press(battle, 'cancel');
-    command(battle, 0);
+    command(battle, 'SNAP');
     assert.equal(battle.phase, 'budget');
     press(battle, 'right');
     assert.deepEqual(battle.gear.budget, [8, 3, 2], 'SNAP edits the selected head');
