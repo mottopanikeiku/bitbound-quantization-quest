@@ -524,6 +524,9 @@ export class World {
       else if (item.zone > 0 && !game.state.friends.includes(item.zone - 1)) game.say('The Static seal is still strong. Help the earlier guardians first.');
       else if (!this._stoneAwake(item.zone)) game.say('The shrine is sealed. Wake this zone’s glowing Grid Stone first.');
       else game.say(shrineDialogue(item.zone), { onDone: () => game.startBattle({ foeId: GUARDIANS[item.zone].key, guardian: true, uid: item.id, zone: item.zone }) });
+    } else if (item.interaction === 'well') {
+      if (game.state.friends.length) game.enterWell();
+      else game.say('Static hums far below the old well. Befriend a guardian before you climb down.');
     } else if (item.interaction === 'lighthouse') {
       if (game.hasFlag('ending-seen')) game.say({ speaker: 'The Oracle', portrait: 'oracle', text: 'A smaller satchel. A larger circle of friends. Thank you for bringing me home.' });
       else if (game.state.friends.length === 7) game.playEnding();

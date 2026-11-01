@@ -19,32 +19,65 @@ async function applyDevRoute(params) {
   };
   game.saving = !params.has('nosave');
   // Shortcut routes skip the title's Enter; their first real key press starts audio instead.
-  const skipsTitle = params.has('zone') || params.has('battle') || ['intro', 'ending'].includes(params.get('scene'));
+  const skipsTitle = ['zone', 'battle', 'well', 'duel', 'journal'].some((key) => params.has(key)) || ['intro', 'ending'].includes(params.get('scene'));
   if (skipsTitle) addEventListener('keydown', () => game.startAudio(), { once: true, capture: true });
   if (params.has('gallery')) {
     const { GalleryScene } = await import('./scenes/gallery.js');
     game.scene = new GalleryScene(game, params.get('gallery'));
     return;
   }
+  const friendsParam = (fallback) => (params.has('friends') ? Math.max(0, Math.min(7, Number(params.get('friends')) || 0)) : fallback);
   if (params.has('zone')) {
     const zone = Math.max(0, Math.min(6, Number(params.get('zone')) || 0));
-    game.state = progressed(zone, zone);
+    game.state = progressed(friendsParam(zone), friendsParam(zone));
     game.worldScene.reset();
     game.scene = game.worldScene;
     game.worldScene.world.devPlace(zone);
     game.worldScene.enter({});
+    if (params.has('journal')) game.openJournal(params.get('journal') || 'map');
     return;
   }
+  if (params.has('journal')) {
+    const friends = friendsParam(3);
+    game.state = progressed(friends, friends);
+    game.worldScene.reset();
+    game.scene = game.worldScene;
+    game.worldScene.enter({});
+    game.openJournal(params.get('journal') || 'map');
+    return;
+  }
+  // ?battle=<foeId>[&species=<dexId>][&mode=practice][&golden][&friends=N]
   if (params.has('battle')) {
     const foeId = params.get('battle');
     const guardian = GUARDIANS.find((g) => g.key === foeId);
     const zone = guardian ? guardian.zone : Number(foeId.split('-')[1]) || 0;
-    const friends = params.has('friends') ? Number(params.get('friends')) : guardian ? guardian.id : zone;
+    const friends = friendsParam(guardian ? guardian.id : zone);
     game.state = progressed(friends, Math.max(friends, zone + 1));
     game.worldScene.reset();
     game.scene = game.battleScene;
     game.setMusicScene(guardian ? 'boss' : 'battle');
-    game.battleScene.enter({ foeId, guardian: Boolean(guardian), uid: `dev-${foeId}`, zone });
+    const mode = params.get('mode') === 'practice' ? 'practice' : 'campaign';
+    game.battleScene.enter({ foeId, species: params.get('species'), mode, guardian: Boolean(guardian), golden: params.has('golden'), uid: `dev-${foeId}`, zone });
+    return;
+  }
+  // ?duel=fen-offset|fen-hot|fen-crown — friends default to the friendship that unlocks the duel.
+  if (params.has('duel')) {
+    const duel = params.get('duel');
+    const friends = friendsParam({ 'fen-offset': 2, 'fen-hot': 5, 'fen-crown': 7 }[duel] ?? 2);
+    game.state = progressed(friends, friends);
+    game.worldScene.reset();
+    game.scene = game.battleScene;
+    game.setMusicScene('rival', 'battle');
+    game.battleScene.enter({ foeId: 'fen', mode: 'duel', duel, uid: duel, zone: 0 });
+    return;
+  }
+  // ?well[&friends=N] — the Well entrance with N friends (default 3).
+  if (params.has('well')) {
+    const friends = friendsParam(3);
+    game.state = progressed(friends, friends);
+    game.worldScene.reset();
+    game.scene = game.wellScene;
+    game.wellScene.enter({});
     return;
   }
   const scene = params.get('scene');

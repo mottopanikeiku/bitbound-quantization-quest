@@ -112,6 +112,7 @@ export function shrineDialogue(zone) {
 export function interactionName(item, state) {
   if (item.interaction === 'npc') return `Talk: ${names[item.id] ?? 'friend'}`;
   if (item.interaction === 'camp') return 'Rest & refill';
+  if (item.interaction === 'well') return state.friends.length ? 'Descend the Static Well' : 'Listen at the old well';
   if (item.interaction === 'stone') return state.techniques.includes(ZONES[item.zone].technique) ? 'Awakened Grid Stone' : `Learn ${TECHNIQUES[ZONES[item.zone].technique].name}`;
   if (item.interaction === 'shrine') return state.friends.includes(item.zone) ? 'Restored shrine' : `Meet ${GUARDIANS[item.zone].name}`;
   if (item.interaction === 'puzzle') return state.puzzles.includes(item.id) ? 'Snap Bridge: solved' : 'Try Snap Bridge';

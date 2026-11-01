@@ -9,7 +9,7 @@ const CODE_ACTIONS = {
   Enter: ['confirm'], NumpadEnter: ['confirm'], Space: ['confirm'], KeyE: ['confirm'], KeyZ: ['confirm'],
   Escape: ['cancel', 'pause'], Backspace: ['cancel'], KeyX: ['cancel'], KeyP: ['pause'],
   ShiftLeft: ['run'], ShiftRight: ['run'],
-  KeyM: ['music'], KeyF: ['fullscreen'], KeyN: ['notes'],
+  KeyM: ['music'], KeyF: ['fullscreen'], KeyN: ['notes'], KeyJ: ['journal'],
 };
 // Fallback for browsers/keyboards that report no physical code.
 const KEY_ACTIONS = {
@@ -17,11 +17,11 @@ const KEY_ACTIONS = {
   a: ['left'], arrowleft: ['left'], d: ['right'], arrowright: ['right'],
   enter: ['confirm'], ' ': ['confirm'], e: ['confirm'], z: ['confirm'],
   escape: ['cancel', 'pause'], backspace: ['cancel'], x: ['cancel'], p: ['pause'],
-  shift: ['run'], m: ['music'], f: ['fullscreen'], n: ['notes'],
+  shift: ['run'], m: ['music'], f: ['fullscreen'], n: ['notes'], j: ['journal'],
 };
 const REPEAT_DELAY = 0.32;
 const REPEAT_RATE = 0.1;
-export const ACTIONS = ['up', 'down', 'left', 'right', 'confirm', 'cancel', 'run', 'pause', 'music', 'fullscreen', 'notes'];
+export const ACTIONS = ['up', 'down', 'left', 'right', 'confirm', 'cancel', 'run', 'pause', 'music', 'fullscreen', 'notes', 'journal'];
 
 function actionsFor(event) {
   return CODE_ACTIONS[event.code] ?? KEY_ACTIONS[event.key?.toLowerCase()] ?? null;

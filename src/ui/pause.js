@@ -10,12 +10,15 @@ export class PauseMenu {
     this.game.announce(`Paused. ${this.entries().map(entry => entry.key === 'music' || entry.key === 'fullscreen' ? entry.label.replace(/ (on|off)$/, '') : entry.label).join(', ')}.`);
   }
   close() { this.open_ = false; }
-  /** Named entries so optional items (full screen) never shift what a choice does. */
+  /** Named entries so optional items (journal, full screen, flee) never shift what a choice does. */
   entries() {
     if (this.confirming) return [{ key: 'keep', label: 'Keep exploring' }, { key: 'erase', label: 'Erase & restart' }];
-    const entries = [{ key: 'resume', label: 'Resume' }, { key: 'notes', label: 'Field Notes' }, { key: 'music', label: `Music ${this.handlers.musicOn?.() ? 'on' : 'off'}` }];
+    const entries = [{ key: 'resume', label: 'Resume' }, { key: 'notes', label: 'Field Notes' }];
+    if (this.handlers.onJournal) entries.push({ key: 'journal', label: 'Journal' });
+    entries.push({ key: 'music', label: `Music ${this.handlers.musicOn?.() ? 'on' : 'off'}` });
     if (this.handlers.fullscreenOn) entries.push({ key: 'fullscreen', label: `Full screen ${this.handlers.fullscreenOn() ? 'on' : 'off'}` });
-    entries.push({ key: 'restart', label: 'Restart adventure' });
+    if (this.handlers.onFlee) entries.push({ key: 'flee', label: 'Flee battle' });
+    if (this.handlers.onRestart) entries.push({ key: 'restart', label: 'Restart adventure' });
     return entries;
   }
   items() { return this.entries().map(entry => entry.label); }
@@ -36,6 +39,8 @@ export class PauseMenu {
     else if (key === 'keep') { this.confirming = false; this._select('restart'); }
     else if (key === 'resume') { this.close(); this.handlers.onResume?.(); }
     else if (key === 'notes') this.handlers.onNotes?.();
+    else if (key === 'journal') this.handlers.onJournal?.();
+    else if (key === 'flee') { this.close(); this.handlers.onFlee?.(); }
     else if (key === 'music') this.handlers.onToggleMusic?.();
     else if (key === 'fullscreen') this.handlers.onToggleFullscreen?.();
     else if (key === 'restart') { this.confirming = true; this.selected = 0; this.game.announce('Erase all adventure progress? Keep exploring is selected.'); }

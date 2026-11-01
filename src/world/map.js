@@ -172,7 +172,7 @@ place(hub, 'point-sign', 'sign', 9, 11, { interaction: 'sign' });
 place(hub, 'point-house-a', 'house-a', 6, 8);
 place(hub, 'point-house-b', 'house-b', 20, 8);
 place(hub, 'point-house-c', 'house-c', 20, 15);
-place(hub, 'point-well', 'well', 16, 12);
+place(hub, 'point-well', 'well', 16, 12, { interaction: 'well' });
 place(hub, 'point-lamp-a', 'lamp', 10, 9);
 place(hub, 'point-lamp-b', 'lamp', 14, 15);
 place(hub, 'point-dock', 'dock', 11, 19);

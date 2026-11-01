@@ -72,6 +72,8 @@ export class Battle {
   }
 
   get canPause() { return this.phase === 'menu'; }
+  /** Pause menu → Flee battle (only offered while canPause). */
+  flee() { if (this.phase === 'menu') this._end('fled'); }
 
   get tuneItems() {
     const items = [];

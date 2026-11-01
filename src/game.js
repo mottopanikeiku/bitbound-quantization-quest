@@ -17,6 +17,10 @@ import { EndingScene } from './scenes/ending.js';
 import { WorldScene } from './scenes/world-scene.js';
 import { BattleScene } from './scenes/battle-scene.js';
 import { drawTransition } from './art/transitions.js';
+import { applyEvent, BADGES } from './progress/progress.js';
+import { Journal } from './ui/journal.js';
+import { WellScene } from './scenes/well-scene.js';
+import { originSpecies } from './content/static-dex.js';
 
 const COVER_SECONDS = { fade: 0.32, 'battle-in': 0.9, 'battle-out': 0.45, wipe: 0.4 };
 
@@ -41,11 +45,13 @@ export class Game {
     this.pauseMenu = new PauseMenu(this);
     this.codex = new Codex(this);
     this.toasts = new Toasts(this);
+    this.journal = new Journal(this);
     this.titleScene = new TitleScene(this);
     this.introScene = new IntroScene(this);
     this.endingScene = new EndingScene(this);
     this.worldScene = new WorldScene(this);
     this.battleScene = new BattleScene(this);
+    this.wellScene = new WellScene(this);
     this.scene = this.titleScene;
     this.scene.enter();
     this._readout = document.querySelector('#readout');
@@ -69,8 +75,8 @@ export class Game {
     });
   }
 
-  setMusicScene(name) {
-    if (!this.audio.setScene(name)) this.audio.setScene('overworld');
+  setMusicScene(name, fallback = 'overworld') {
+    if (!this.audio.setScene(name)) this.audio.setScene(fallback);
   }
 
   toggleMusic() {
@@ -191,7 +197,7 @@ export class Game {
   }
 
   sceneName() {
-    const names = new Map([[this.battleScene, 'battle'], [this.worldScene, 'world'], [this.titleScene, 'title'], [this.introScene, 'intro'], [this.endingScene, 'ending']]);
+    const names = new Map([[this.battleScene, 'battle'], [this.worldScene, 'world'], [this.wellScene, 'well'], [this.titleScene, 'title'], [this.introScene, 'intro'], [this.endingScene, 'ending']]);
     return names.get(this.scene) ?? 'gallery';
   }
 
@@ -273,34 +279,78 @@ export class Game {
 
   playEnding() {
     this.setFlag('ending-seen');
+    this.emit('ending');
     this.save();
     this.setMusicScene('ending');
     this.cut(() => this._setScene(this.endingScene));
   }
 
-  startBattle({ foeId, guardian = false, uid = null, zone = 0 }) {
-    if (this.transition || this.scene !== this.worldScene) return false;
+  /**
+   * Start a battle. mode:
+   *   'campaign' — island fights: guardians befriend, staticlings give bytes (the default);
+   *   'practice' — a guardian rematch or species practice: grade and records only;
+   *   'duel'     — Fen Float; duel is 'fen-offset' | 'fen-hot' | 'fen-crown';
+   *   'well'     — a Static Well floor; well is the floor descriptor built by src/well.
+   * species selects a staticling motif (dex id); golden marks the rare variant.
+   * Practice, duels and Well floors never change the campaign hero, friends or rewards.
+   */
+  startBattle({ foeId, species = null, mode = 'campaign', guardian = false, uid = null, zone = 0, golden = false, duel = null, well = null }) {
+    const from = mode === 'well' ? this.wellScene : this.worldScene;
+    if (this.transition || this.scene !== from) return false;
     this.save();
     const { canvas, ctx } = makeCanvas(this.screen.w, this.screen.h);
     ctx.drawImage(this.screen.canvas, 0, 0);
-    this.audio.play('charge');
-    this.setMusicScene(guardian ? 'boss' : 'battle');
-    return this.cut(() => this._setScene(this.battleScene, { foeId, guardian, uid, zone }), { kind: 'battle-in', from: canvas });
+    this.audio.play(golden ? 'golden' : 'charge');
+    if (mode === 'duel') this.setMusicScene('rival', 'battle');
+    else if (mode === 'well' && well?.warden) this.setMusicScene('warden', 'boss');
+    else this.setMusicScene(guardian ? 'boss' : 'battle');
+    const params = { foeId, species, mode, guardian, uid, zone, golden, duel, well };
+    this.emit('battle-start', { foeId, species, mode, guardian, golden, duel, depth: well?.depth ?? null });
+    return this.cut(() => this._setScene(this.battleScene, params), { kind: 'battle-in', from: canvas });
   }
 
-  /** Apply a finished battle's result to the save and return to the island. */
+  /** Apply a finished battle's result, settled by mode, and return to the island or the Well. */
   endBattle(result, params) {
     const state = this.state;
+    const mode = params.mode ?? 'campaign';
+    const won = result.outcome === 'won';
     const stats = heroStats(state);
     state.stats.battles++;
     state.stats.perfects += result.stats?.perfects ?? 0;
     state.stats.fizzles += result.stats?.fizzles ?? 0;
     state.gear = { ...state.gear, ...result.gear };
     if (result.guardTaught) this.setFlag('guard-taught');
+    // Committed assists count per friend in completed fights (won or lost, not fled): cosmetic bonds.
+    if (result.outcome !== 'fled') for (const key of result.assists ?? []) state.bonds[key] = Math.min(999, (state.bonds[key] ?? 0) + 1);
+    this.emit('battle-end', {
+      foeId: result.foeId,
+      species: result.species ?? params.species ?? (String(result.foeId).startsWith('static-') ? originSpecies(params.zone) : null),
+      mode,
+      outcome: result.outcome,
+      guardian: Boolean(params.guardian),
+      golden: Boolean(params.golden),
+      duel: params.duel ?? null,
+      depth: params.well?.depth ?? null,
+      grade: result.grade ?? null,
+      stats: result.stats ?? {},
+      maxResonance: result.maxResonance ?? 0,
+      assists: result.assists ?? [],
+    });
+    if (mode === 'well') {
+      this.cut(() => this._setScene(this.wellScene, { battleResult: result }), { kind: 'fade' });
+      return;
+    }
     const world = this.worldScene.world;
     const guardian = GUARDIANS.find((g) => g.key === result.foeId);
     let after = null;
-    if (result.outcome === 'won' && guardian && guardian.id === state.friends.length) {
+    if (mode === 'duel') {
+      if (won && !state.rival.won.includes(params.duel)) state.rival.won.push(params.duel);
+      else if (result.outcome === 'lost') state.rival.losses++;
+      after = () => world.afterDuel?.(params.duel, result.outcome);
+    } else if (mode === 'practice') {
+      const letter = result.grade?.letter;
+      if (won && letter) after = () => this.toast(`Practice grade ${letter}`, { kind: 'reward', ms: 2600 });
+    } else if (won && guardian && guardian.id === state.friends.length) {
       state.friends.push(guardian.id);
       const grown = heroStats(state);
       state.hero = {
@@ -308,6 +358,7 @@ export class Game {
         bytes: grown.maxBytes,
         snacks: Math.min(grown.maxSnacks, result.hero.snacks ?? state.hero.snacks),
       };
+      this.emit('befriend', { guardian: guardian.id });
       after = () => {
         world.restoreZone(guardian.zone);
         this.audio.play('restore');
@@ -322,15 +373,15 @@ export class Game {
         this.toast('You wake by the campfire. Friends kept; try a new plan.', { kind: 'notice', ms: 4200 });
       };
     } else {
-      const reward = result.outcome === 'won' ? Math.max(0, Math.trunc(result.reward?.bytes ?? 0)) : 0;
+      const reward = won ? Math.max(0, Math.trunc(result.reward?.bytes ?? 0)) : 0;
       state.hero = {
         hp: Math.max(1, Math.min(stats.maxHp, result.hero.hp ?? state.hero.hp)),
         bytes: Math.max(0, Math.min(stats.maxBytes, (result.hero.bytes ?? state.hero.bytes) + reward)),
         snacks: Math.max(0, Math.min(stats.maxSnacks, result.hero.snacks ?? state.hero.snacks)),
       };
-      if (reward) after = () => this.toast(`Static cleared: +${reward} B`, { kind: 'reward', ms: 2200 });
+      if (reward) after = () => this.toast(`${params.golden ? 'Golden static cleared' : 'Static cleared'}: +${reward} B`, { kind: 'reward', ms: 2200 });
     }
-    world.afterBattle(params.uid, result.outcome);
+    if (mode === 'campaign') world.afterBattle(params.uid, result.outcome);
     this.cut(
       () => {
         this._setScene(this.worldScene, { fromBattle: true });
@@ -339,6 +390,69 @@ export class Game {
       },
       { kind: 'fade' },
     );
+  }
+
+  /** Leave a battle from the pause menu (FLEE lives there so the command menu has room for FRIENDS). */
+  fleeBattle() {
+    const battle = this.scene === this.battleScene ? this.battleScene.battle : null;
+    if (battle?.canPause && typeof battle.flee === 'function') battle.flee();
+  }
+
+  // ── The Static Well, the rival and travel ────────────────────────────────
+
+  /** The Well scene offers Resume (a suspended run in state.wellRun) or a new expedition. */
+  enterWell() {
+    if (this.transition || this.scene !== this.worldScene) return false;
+    this.save();
+    this.audio.play('descend');
+    return this.cut(() => this._setScene(this.wellScene, {}), { kind: 'fade' });
+  }
+
+  /** Back to the island beside the well; the hero never moved, so no zone banner. */
+  leaveWell() {
+    if (this.transition || this.scene !== this.wellScene) return false;
+    return this.cut(() => this._setScene(this.worldScene, { fromBattle: true }), { kind: 'fade' });
+  }
+
+  /** Fen Float's optional duels; the world starts them from his Talk / Duel / Later menu. */
+  startRivalDuel(duelId) {
+    return this.startBattle({ foeId: 'fen', mode: 'duel', duel: duelId, uid: duelId, zone: this.worldScene.world.position.zone });
+  }
+
+  /** Campfire travel between camps the hero has rested at. */
+  travelTo(campId) {
+    if (this.transition || this.scene !== this.worldScene || !this.state.camps.includes(campId)) return false;
+    this.audio.play('travel');
+    this.emit('travel', { to: campId });
+    return this.cut(() => {
+      this.worldScene.world.returnToCamp(campId);
+      this.state.camp = campId;
+      this.save();
+    }, { kind: 'fade' });
+  }
+
+  setHat(id) {
+    this.state.hat = id ?? null;
+    this.emit('hat', { id: this.state.hat });
+    this.save();
+  }
+
+  /** Pin one landmark (interactable id) as the world objective, or clear it with null. */
+  setPin(id) {
+    this.state.pin = id ?? null;
+    this.save();
+  }
+
+  /** Report a gameplay event to meta-progress (dex, records, badges); badge unlocks are celebrated. */
+  emit(type, data = {}) {
+    const unlocked = applyEvent(this.state.progress, { type, ...data }, { state: this.state }) ?? [];
+    for (const id of unlocked) {
+      const badge = BADGES.find((item) => item.id === id);
+      if (!badge) continue;
+      this.audio.play('badge');
+      this.toast(`Badge earned: ${badge.name}`, { kind: 'badge', ms: 3600 });
+    }
+    return unlocked;
   }
 
   // ── Services for scenes and overlays ─────────────────────────────────────
@@ -371,6 +485,7 @@ export class Game {
   collectShard(id) {
     if (this.state.shards.includes(id)) return false;
     this.state.shards.push(id);
+    this.emit('shard', { id });
     const count = this.state.shards.length;
     this.audio.play('shard');
     if (count % 8 === 0) {
@@ -385,6 +500,7 @@ export class Game {
     if (this.state.caches.includes(id)) return false;
     const stats = this.stats();
     this.state.caches.push(id);
+    this.emit('cache', { id });
     this.state.hero.snacks = Math.min(stats.maxSnacks, this.state.hero.snacks + 1);
     this.state.hero.bytes = Math.min(stats.maxBytes, this.state.hero.bytes + 12);
     this.audio.play('cache');
@@ -396,6 +512,7 @@ export class Game {
   solvePuzzle(id) {
     if (this.state.puzzles.includes(id)) return false;
     this.state.puzzles.push(id);
+    this.emit('puzzle', { id });
     this.audio.play('restore');
     this.save();
     return true;
@@ -407,6 +524,12 @@ export class Game {
     this.state.hero.bytes = stats.maxBytes;
     this.state.hero.snacks = Math.max(3, this.state.hero.snacks);
     this.state.camp = campId;
+    if (!this.state.camps.includes(campId)) {
+      this.state.camps.push(campId);
+      this.emit('camp', { id: campId });
+    }
+    // Each rest is a new "visit": patrols return and their golden rolls are re-drawn (deterministic per visit).
+    this.state.restCount = (this.state.restCount ?? 0) + 1;
     this.worldScene.world.respawnStaticlings();
     this.audio.play('heal');
     this.toast('Rested: HP and bytes restored. Awake patrols return home.', { kind: 'notice', ms: 3200 });
@@ -426,13 +549,15 @@ export class Game {
 
   openPause() {
     this.audio.play('menu-move');
+    const inBattle = this.scene === this.battleScene;
     this.pauseMenu.open({
       musicOn: () => this.state.music,
       onResume: () => this.audio.play('menu-back'),
       onNotes: () => this.openNotes(),
+      onJournal: () => this.openJournal(),
       onToggleMusic: () => this.toggleMusic(),
       ...(this.fullscreenSupported ? { fullscreenOn: () => this.isFullscreen(), onToggleFullscreen: () => this.toggleFullscreen() } : {}),
-      onRestart: () => this.restart(),
+      ...(inBattle ? { onFlee: () => this.fleeBattle() } : { onRestart: () => this.restart() }),
     });
   }
 
@@ -440,11 +565,17 @@ export class Game {
     this.codex.open({ lessons: this.state.lessons, onClose: () => this.audio.play('menu-back') });
   }
 
+  openJournal(tab = 'map') {
+    this.audio.play('menu-move');
+    this.journal.open({ tab, onClose: () => this.audio.play('menu-back') });
+  }
+
   // ── Frame ────────────────────────────────────────────────────────────────
 
   _overlay() {
     if (this.lessonCard.active) return this.lessonCard;
     if (this.dialogue.active) return this.dialogue;
+    if (this.journal.active) return this.journal;
     if (this.codex.active) return this.codex;
     if (this.pauseMenu.active) return this.pauseMenu;
     return null;
@@ -488,6 +619,9 @@ export class Game {
         if ((worldFree || battleFree) && input.pressed('notes')) {
           input.consume('notes');
           this.openNotes();
+        } else if (worldFree && input.pressed('journal')) {
+          input.consume('journal');
+          this.openJournal();
         } else if ((worldFree || battleFree) && input.pressed('pause')) {
           input.consume('pause');
           input.consume('cancel');
@@ -529,6 +663,7 @@ export class Game {
     this.scene.draw(ctx, screen, this.time);
     this.pauseMenu.draw(ctx, screen, this.time);
     this.codex.draw(ctx, screen, this.time);
+    this.journal.draw(ctx, screen, this.time);
     this.dialogue.draw(ctx, screen, this.time);
     this.lessonCard.draw(ctx, screen, this.time);
     this.toasts.draw(ctx, screen, this.time);
@@ -548,7 +683,7 @@ export class Game {
     const overlay = this._overlay();
     const parts = [`Scene ${scene}`, `HP ${s.hero.hp}/${stats.maxHp}`, `Bytes ${s.hero.bytes}/${stats.maxBytes}`, `Friends ${s.friends.length}/7`];
     if (overlay) {
-      const overlayName = overlay === this.lessonCard ? 'Lesson card' : overlay === this.dialogue ? 'Dialogue' : overlay === this.codex ? 'Field Notes' : 'Pause menu';
+      const overlayName = overlay === this.lessonCard ? 'Lesson card' : overlay === this.dialogue ? 'Dialogue' : overlay === this.codex ? 'Field Notes' : overlay === this.journal ? 'Journal' : 'Pause menu';
       parts.push(`Overlay ${overlayName}`);
     }
     if (scene === 'world') {
@@ -559,6 +694,7 @@ export class Game {
       if (detail) parts.push(detail);
     }
     if (scene === 'battle') parts.push(this.battleScene.describe());
+    if (scene === 'well') parts.push(this.wellScene.describe());
     return parts.join('. ');
   }
 }
