@@ -69,7 +69,7 @@ const TOKEN_SIGNS = [
   [1, -1, 1, -1, 1, 1, -1, 1, 1, 1, 1, -1, -1, 1, -1, 1],
   [-1, 1, 1, 1, 1, -1, 1, -1, 1, -1, 1, 1, -1, 1, 1, -1],
 ];
-// Fourteen crown values make the honest 8/2/2 and 8/3/2 packets 28/30 B.
+// Fourteen crown values make the 8/2/2 and 8/3/2 packets 28/30 B.
 // Four clean casts then need one 12 B recharge, not a last two-byte extra turn.
 const PRECISE_HEAD = [-127, -109, -83, -57, -29, -11, 7, 31, 51, 79, 101, 127, 113, 67];
 const LOPSIDED_HEAD = [-8, 0, 5, 12, 19, 27, 36, 45, 57, 71, 83, 99, 127, 108];

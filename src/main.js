@@ -5,7 +5,7 @@ import { GUARDIANS, TECHNIQUE_ORDER, heroStats } from './content/game-data.js';
 
 const game = new Game({ canvas: document.querySelector('#game'), stage: document.querySelector('#stage') });
 
-/** DEV-only shortcuts for building and reviewing slices (stripped from production builds). */
+/** Development shortcuts for individual game screens, removed from production builds. */
 async function applyDevRoute(params) {
   const progressed = (friends, techniques) => {
     const state = newGame();
