@@ -5,7 +5,7 @@ import { Pix, mix, u32, bayer } from './paint.js';
 import { clamp, makeCanvas } from '../engine/util.js';
 import { drawText } from '../engine/font.js';
 
-export const BACKGROUND_IDS = ['meadow', 'grove', 'cove', 'heights', 'forge', 'archives', 'spire', 'static', 'final'];
+export const BACKGROUND_IDS = ['meadow', 'grove', 'cove', 'heights', 'forge', 'archives', 'spire', 'static', 'final', 'well', 'warden', 'duel'];
 
 const SIZE = 128;
 const MASK = SIZE - 1;
@@ -13,7 +13,7 @@ const PHASES = 24;
 const SHADE_STEPS = 8;
 const CALM_BANK = SHADE_STEPS * 8;
 const CALM_STEPS = 8;
-const TITLES = ['Bitleaf reverie', 'The offset cathedral', 'A tide of values', 'Three silken channels', 'Ember inference', 'The ink between', 'The precision court', 'The lost signal', 'Every bit a star'];
+const TITLES = ['Bitleaf reverie', 'The offset cathedral', 'A tide of values', 'Three silken channels', 'Ember inference', 'The ink between', 'The precision court', 'The lost signal', 'Every bit a star', 'The Static Well', 'Court of the wardens', "Fen's chart room"];
 // Each entry is a material ramp and a deliberately low brightness; highlights belong to the foe.
 const THEMES = {
   meadow: { tones: [['forest', 0.3], ['forest', 1.0], ['forest', 1.7], ['grass', 2.3], ['gold', 1.9], ['forest', 1.5]], speed: 0.6, wave: 8, bend: 0.12 },
@@ -225,8 +225,264 @@ function getFrame(w, h, stage) {
   return frame;
 }
 
-/** Fills the canvas. Optional stage={x,y,w,h} places a cached, softly feathered calm zone. */
-export function drawBattleBackground(ctx, screen, id, t, { intensity = 1, reduced = false, stage = null } = {}) {
+const stages = new Map();
+
+function masonry(p, ramp, tier) {
+  const tones = [PAL.night[0], mix(PAL.stone[1], ramp[0], 0.45), mix(PAL.stone[2], ramp[1], 0.45), mix(PAL.stone[3], ramp[2], 0.35)];
+  p.rect(0, 0, p.w, p.h, (x, y) => {
+    const distance = Math.max(Math.abs(x-p.w*.5)/(p.w*.52),Math.abs(y-p.h*.38)/(p.h*.67));
+    if(distance < .19) return PAL.night[0];
+    const course = Math.floor(y / 22);
+    const bx = (x + (course & 1) * 24) % 48;
+    const by = y % 22;
+    if (bx < 2 || by < 2) return tones[0];
+    const light = Math.max(0, 1 - y / p.h) * (1 - tier * 0.08);
+    if (by < 4 || bx < 4) return tones[light > 0.35 && distance > .5 ? 3 : 2];
+    if (by > 18 || bx > 43) return tones[1];
+    // Broad facets and a few chips, not per-pixel noise.
+    return distance < .48 || (bx > 27 && by > 11) || (bx < 13 && by > 15) ? tones[1] : tones[2];
+  });
+}
+
+function staticLayer(w, h, ramp, quiet) {
+  const p = new Pix(w + 32, h + 32);
+  const qx = quiet ? quiet.x + quiet.w / 2 : w * 0.52;
+  const qy = quiet ? quiet.y + quiet.h / 2 : h * 0.38;
+  for (let y = 8; y < h + 32; y += 24) for (let x = 6; x < w + 32; x += 32) {
+    const calm = Math.abs(x - qx) < (quiet ? quiet.w * .65 : w * .25) && Math.abs(y-qy) < (quiet ? quiet.h*.65 : h*.28);
+    if (calm) continue;
+    bit(p, x, y, ((x >> 5) ^ (y >> 3)) & 1, ramp[3]);
+    p.line(x+8,y+3,x+24,y+3,ramp[1]).line(x+16,y-4,x+16,y+11,ramp[1]);
+  }
+  return p.toCanvas();
+}
+
+function warmShaftLight(p, tier) {
+  const cx = Math.floor(p.w * 0.34);
+  // Lantern light is a material wash, not a screen-wide flashing overlay.
+  const glow = new Pix(p.w, p.h);
+  glow.rect(0, 0, p.w, Math.floor(p.h * 0.64), (x,y) => {
+    const spread = 12 + y * 0.65;
+    const fall = Math.max(0, 1 - Math.abs(x-cx) / spread) * Math.max(0, 1-y/(p.h*.65)) / (1+tier*.35);
+    return bayer(x,y) < fall * 0.35 ? PAL.gold[2] : null;
+  });
+  // The cached wash composites once, so warm light does not eat frame time.
+  const target = p.toCanvas();
+  const ctx = target.getContext('2d');
+  ctx.globalAlpha = 0.18;
+  ctx.drawImage(glow.toCanvas(),0,0);
+  ctx.globalAlpha = 1;
+  const lantern = new Pix(15,25);
+  lantern.rect(7,0,1,9,PAL.stone[3]).rect(3,8,9,14,PAL.gold[0]);
+  lantern.rect(4,10,7,10,PAL.gold[4]).rect(5,11,3,7,PAL.gold[6]);
+  lantern.rect(2,8,11,2,PAL.stone[4]).rect(2,21,11,2,PAL.stone[2]);
+  lantern.rect(7,10,1,10,PAL.gold[1]);
+  ctx.drawImage(lantern.toCanvas(),cx-7,0);
+  return target;
+}
+
+function calmStage(canvas, id, quiet) {
+  const w = canvas.width;
+  const h = canvas.height;
+  const cx = quiet ? quiet.x + quiet.w/2 : w * .5;
+  const cy = quiet ? quiet.y + quiet.h/2 : h * .4;
+  const rx = quiet ? Math.max(30,quiet.w*.7) : w * .31;
+  const ry = quiet ? Math.max(30,quiet.h*.7) : h * .30;
+  const ctx = canvas.getContext('2d');
+  const image = ctx.getImageData(0,0,w,h);
+  const words = new Uint32Array(image.data.buffer);
+  const tint = u32(id === 'duel' ? PAL.wood[0] : PAL.night[0]);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const amount = clamp(1-((x-cx)/rx)**2-((y-cy)/ry)**2);
+    if(amount>0) words[y*w+x]=washWord(words[y*w+x],tint,amount*amount*.66);
+  }
+  ctx.putImageData(image,0,0);
+  return canvas;
+}
+
+function stageCanvas(w, h, id, depth, quiet) {
+  const tier = clamp(Math.floor((depth - 1) / 5), 0, 6);
+  const key = `${id}:${w}:${h}:${tier}:${quiet ? `${quiet.x}:${quiet.y}:${quiet.w}:${quiet.h}` : 'auto'}`;
+  if (stages.has(key)) return stages.get(key);
+  const p = new Pix(w, h);
+  const cx = w >> 1;
+  const cy = Math.floor(h * 0.38);
+  const ramp = tier < 2 ? PAL.teal : tier < 4 ? PAL.violet : PAL.water;
+  p.rect(0, 0, w, h, PAL.night[0]);
+  if (id === 'duel') {
+    const horizon = Math.floor(h * 0.52);
+    p.rect(0, 0, w, h, PAL.wood[0]);
+    // Shaded panelled walls with long, clustered grain and a faint paper grid.
+    for (let x = 0; x < w; x += 26) {
+      p.rect(x,0,2,horizon+6,PAL.wood[1]).rect(x+2,0,1,horizon+6,PAL.wood[2]);
+      for (let y = 9; y < horizon; y += 17) p.line(x+9,y,x+15,y+4,PAL.wood[1]);
+    }
+    p.rect(16,0,w-32,13,(x,y)=>bayer(x,y)<(1-y/14)*.24?PAL.wood[2]:null);
+    p.rect(14, 14, w - 28, horizon, PAL.water[1]);
+    p.rect(17, 17, w - 34, horizon - 6, PAL.sky[1]);
+    p.rect(17, Math.floor(horizon * 0.60), w - 34, Math.floor(horizon * 0.40), PAL.water[2]);
+    p.rect(17,17,w-34,Math.floor(horizon*.6)-17,(x,y)=>bayer(x,y)<Math.max(0,1-y/horizon)*.45?PAL.sky[2]:null);
+    for (let y = Math.floor(horizon * 0.60) + 7; y < horizon; y += 12)
+      for (let x = 20; x < w - 20; x += 34) p.rect(x + (y & 8), y, 18, 1, PAL.water[3]);
+    p.poly([[w-78, Math.floor(horizon*0.60)],[w-59,Math.floor(horizon*0.60)-10],[w-34,Math.floor(horizon*0.60)]],PAL.teal[1]);
+    p.line(w-78,Math.floor(horizon*0.60),w-33,Math.floor(horizon*0.60),PAL.water[4]);
+    p.line(16,14,w-17,14,PAL.wood[4]).line(14,16,14,horizon,PAL.wood[3]);
+    p.poly([[17,17],[29,17],[24,horizon-9],[17,horizon-3]],PAL.roofBlue[1]);
+    p.poly([[w-29,17],[w-17,17],[w-17,horizon-3],[w-24,horizon-9]],PAL.roofBlue[1]);
+    p.line(21,20,19,horizon-13,PAL.roofBlue[3]);
+    p.rect(cx - 3, 14, 6, horizon, PAL.wood[2]);
+    p.rect(14, Math.floor(horizon * 0.60) - 3, w - 28, 6, PAL.wood[2]);
+    p.rect(8, horizon + 6, w - 16, h - horizon, PAL.wood[1]);
+    for (let y = horizon + 18; y < h; y += 18) p.line(8, y, w - 8, y, PAL.wood[0]);
+    for (let y = horizon + 9; y < h; y += 18) for (let x = 12; x < w - 14; x += 38) {
+      p.line(x,y+4,x+23,y+4,PAL.wood[2]).line(x+4,y+7,x+31,y+7,PAL.wood[0]);
+      if ((x+y)%3===0) p.ellipse(x+26,y+10,4,1,PAL.wood[0]);
+    }
+    // Window quadrants throw a warm, dithered trapezoid over the desk.
+    const deskLight = mix(PAL.wood[1],PAL.wood[3],.24);
+    p.rect(9,horizon+7,w-18,h-horizon-7,(x,y)=>{
+      const u=(y-horizon)/Math.max(1,h-horizon);
+      const left=20+u*24;
+      const right=w-20-u*12;
+      if(x<left||x>right||Math.abs(x-cx)<4+u*4) return null;
+      const shade=Math.max(0,.38-u*.32);
+      return bayer(x,y)<shade?deskLight:null;
+    });
+    p.rect(24,horizon-28,34,22,PAL.sand[2]).rect(26,horizon-26,30,18,PAL.sand[3]);
+    for(let x=30;x<54;x+=8)p.line(x,horizon-25,x,horizon-10,PAL.sand[2]);
+    p.line(28,horizon-20,53,horizon-20,PAL.sand[2]);
+    p.line(31,horizon-13,41,horizon-22,PAL.teal[1]).line(41,horizon-22,49,horizon-14,PAL.teal[1]);
+    p.rect(25,horizon-27,2,2,PAL.gold[5]).rect(54,horizon-27,2,2,PAL.gold[5]);
+    // A nautical chart pinned beside the clear battle stage, with a compass and grid.
+    const chartW = Math.max(50, Math.floor(w * 0.25));
+    p.rect(22, horizon + 17, chartW, Math.max(33, h - horizon - 40), PAL.sand[2]);
+    p.rect(25, horizon + 20, chartW - 6, Math.max(27, h - horizon - 46), PAL.sand[3]);
+    for (let x = 31; x < 20 + chartW; x += 12) p.line(x, horizon + 22, x, h - 24, PAL.sand[2]);
+    for (let y = horizon + 26; y < h - 22; y += 12) p.line(27, y, chartW + 18, y, PAL.sand[2]);
+    diamond(p, 41, horizon + 38, 10, PAL.gold[5]);
+    p.line(41, horizon + 25, 41, horizon + 51, PAL.cream[1]);
+    p.line(chartW-5,horizon+29,chartW+10,horizon+38,PAL.teal[1]);
+    p.line(chartW+10,horizon+38,chartW-1,horizon+50,PAL.teal[1]);
+    p.rect(chartW-6,horizon+28,3,3,PAL.gold[5]).rect(chartW-2,horizon+49,3,3,PAL.gold[5]);
+    p.rect(24,horizon+18,2,2,PAL.cream[2]).rect(chartW+17,horizon+18,2,2,PAL.cream[2]);
+    for (let i = 0; i < 3; i++) p.rect(w - 49 + i * 7, horizon + 23 + i * 4, 6, 35 - i * 4, PAL.sand[2 + (i & 1)]);
+    // The pack lives on the edge of the stage, never underneath the creature.
+    const px = w - 42;
+    const py = Math.min(h-12, horizon + 59);
+    p.ellipse(px,py+1,25,5,PAL.shadow);
+    p.poly([[px-18,py],[px-20,py-26],[px-13,py-40],[px+12,py-43],[px+22,py-24],[px+19,py]],PAL.wood[0]);
+    p.poly([[px-15,py-2],[px-16,py-26],[px-10,py-36],[px+11,py-37],[px+17,py-23],[px+15,py-2]],PAL.teal[1]);
+    p.poly([[px-16,py-26],[px-10,py-36],[px+11,py-37],[px+15,py-28],[px-5,py-21]],PAL.teal[2]);
+    p.rect(px-8,py-35,4,29,PAL.wood[3]).rect(px+8,py-35,3,29,PAL.wood[2]);
+    p.rect(px-5,py-24,10,8,PAL.gold[2]).rect(px-3,py-22,6,4,PAL.gold[4]);
+    for(let i=0;i<4;i++){
+      const xx=px-15+i*8;
+      const yy=py-45-(i&1)*6;
+      p.rect(xx,yy,7,20,PAL.sand[2]).rect(xx+1,yy+1,3,18,PAL.sand[4]);
+      p.ellipse(xx+3,yy,3,2,PAL.sand[5]).ellipse(xx+3,yy,1,1,PAL.wood[1]);
+      bit(p,xx+1,yy+8,i&1,PAL.wood[2]);
+    }
+  } else {
+    masonry(p, ramp, tier);
+    // Concentric masonry frames and rails converge toward a dark vanishing point.
+    for (let i = 0; i < 7; i++) {
+      const k = (7 - i) / 7;
+      const rw = Math.floor(w * 0.48 * k * k) + 6;
+      const rh = Math.floor(h * 0.64 * k * k) + 5;
+      const rim = Math.max(3, 9 - i);
+      p.rect(cx+rw-rim,cy-rh,rim,rh*2,ramp[0]);
+      p.rect(cx-rw,cy+rh-rim,rw*2,rim,ramp[0]);
+      p.rect(cx-rw+1,cy-rh+1,rw*2-2,rim-1,ramp[2]);
+      p.rect(cx-rw+1,cy-rh+rim,rim-1,rh*2-rim-1,ramp[1]);
+      p.line(cx-rw+1, cy-rh+1, cx+rw-2, cy-rh+1, mix(PAL.stone[3],ramp[3],.55));
+      if (i < 4) {
+        for (let x = cx-rw+12; x < cx+rw-10; x += 24) {
+          p.rect(x, cy+rh-2, 4, 2, ramp[3]);
+          p.rect(x, cy-rh+2, 1, 2, PAL.night[0]);
+        }
+        for (let y = cy-rh+12; y < cy+rh-6; y += 20) {
+          p.rect(cx-rw+1,y,2,1,PAL.night[0]).rect(cx+rw-3,y+8,2,1,PAL.night[0]);
+          if (i < 2 && (y & 16)) p.rect(cx-rw+4,y-3,3,6,PAL.gold[1]).rect(cx-rw+5,y-2,1,3,PAL.gold[4]);
+        }
+      }
+    }
+    p.line(3, 0, cx-7, cy-5, ramp[2]).line(w-4, 0, cx+7, cy-5, ramp[1]);
+    p.line(0, h-1, cx-7, cy+5, ramp[2]).line(w-1, h-1, cx+7, cy+5, ramp[1]);
+    if (id === 'warden') {
+      // Tall columns, a broken crown and a restrained red-gold warding seal.
+      for (const x of [Math.floor(w * 0.12), Math.floor(w * 0.88)]) {
+        p.rect(x-8, 18, 17, h-25, PAL.violet[1]).rect(x-6, 18, 4, h-25, PAL.violet[3]);
+        p.rect(x-11, 18, 23, 5, PAL.gold[2]).rect(x-11, h-23, 23, 5, PAL.gold[2]);
+      }
+      diamond(p, cx, cy, Math.floor(Math.min(w, h)*0.28), PAL.gold[2]);
+      diamond(p, cx, cy, Math.floor(Math.min(w, h)*0.23), PAL.violet[2]);
+      p.poly([[cx-24,20],[cx-20,34],[cx+20,34],[cx+24,20],[cx+10,27],[cx,15],[cx-10,27]], PAL.gold[3]);
+      p.line(cx-21,21,cx-18,30,PAL.gold[5]);
+    }
+  }
+  const canvas = calmStage(id === 'duel' ? p.toCanvas() : warmShaftLight(p,tier),id,quiet);
+  const result = { canvas, signal: id === 'duel' ? null : staticLayer(w,h,ramp,quiet) };
+  if (stages.size >= 16) stages.delete(stages.keys().next().value);
+  stages.set(key, result);
+  return result;
+}
+
+function drawStage(ctx, screen, id, t, depth, reduced, quiet) {
+  const stage = stageCanvas(screen.w, screen.h, id, depth, quiet);
+  ctx.drawImage(stage.canvas, 0, 0);
+  const w = screen.w;
+  const h = screen.h;
+  const clock = reduced ? 0 : t;
+  if (stage.signal) {
+    ctx.save();
+    ctx.globalAlpha = id === 'warden' ? 0.13 : 0.22;
+    const drift = Math.floor(clock * 2) % 24;
+    for(let y=0;y<h;y+=8){
+      const sway = reduced ? 0 : Math.round(Math.sin(y*.035+clock*.4)*4);
+      ctx.drawImage(stage.signal,16+sway,y+drift,w,Math.min(8,h-y),0,y,w,Math.min(8,h-y));
+    }
+    ctx.restore();
+  }
+  if(id === 'duel'){
+    // The open sea shimmers through the window, not across its timber frame.
+    const horizon = Math.floor(h*.52);
+    ctx.fillStyle=PAL.water[4];
+    for(let row=0;row<4;row++){
+      const y=Math.floor(horizon*.67)+row*7;
+      const drift=Math.floor(clock*4+row*11);
+      for(let x=24;x<w-27;x+=53){
+        const xx=24+(x+drift)%Math.max(1,w-60);
+        if(Math.abs(xx-w/2)>15)ctx.fillRect(xx,y,10,1);
+      }
+    }
+    const phase = reduced ? 0.4 : (clock%17)/17;
+    if(phase>.12&&phase<.72){
+      const gx=Math.round(25+phase*(w-65));
+      const gy=Math.round(horizon*.32);
+      ctx.fillStyle=PAL.sky[0];
+      ctx.fillRect(gx-5,gy-1,4,1);ctx.fillRect(gx-2,gy,5,1);ctx.fillRect(gx+3,gy-1,4,1);
+    }
+  }
+  // Twelve purposeful glints, not a noisy full-screen overlay.
+  for (let i = 0; i < 12; i++) {
+    const x = Math.round((i * 53 + 23) % w);
+    const y = Math.round((i * 29 + clock * (id === 'duel' ? 3 : 12)) % h);
+    ctx.fillStyle = id === 'duel' ? PAL.water[4] : id === 'warden' ? PAL.gold[3] : depth < 11 ? PAL.teal[3] : depth < 21 ? PAL.violet[3] : PAL.water[3];
+    if (id === 'duel') {
+      const xx = 20 + x % Math.max(1,w-48);
+      const yy = 20 + y % Math.max(1,Math.floor(h * .48)-25);
+      if(Math.abs(xx-w/2)>14)ctx.fillRect(xx,yy,8,1);
+    }
+    else if (!quiet || x < quiet.x || x > quiet.x+quiet.w || y < quiet.y || y > quiet.y+quiet.h) ctx.fillRect(x, y, 2, 3);
+  }
+}
+
+/** Fills the canvas. stage places a calm tapestry zone; depth tints Well masonry by capped five-floor tiers. */
+export function drawBattleBackground(ctx, screen, id, t, { intensity = 1, reduced = false, stage = null, depth = 1 } = {}) {
+  if (id === 'well' || id === 'warden' || id === 'duel') {
+    drawStage(ctx, screen, id, t, depth, reduced, stage);
+    return;
+  }
   id = THEMES[id] ? id : 'static';
   const w = screen.w | 0;
   const h = screen.h | 0;
@@ -264,33 +520,37 @@ export function drawBattleBackground(ctx, screen, id, t, { intensity = 1, reduce
   ctx.drawImage(frame.canvas, 0, 0);
 }
 
-function sample(ctx, x, y, w, h, id, t, label) {
+function sample(ctx, x, y, w, h, id, t, label, opts) {
   ctx.fillStyle = PAL.night[5];
   ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
   ctx.save();
   ctx.translate(x, y);
-  drawBattleBackground(ctx, { w, h }, id, t);
+  drawBattleBackground(ctx, { w, h }, id, t, opts);
   ctx.restore();
   drawText(ctx, label, x + 5, y + h - 12, { font: 'small', color: PAL.ui.dim, shadow: PAL.ink });
 }
 
 export const galleries = {
   backgrounds(ctx, screen, t, page = 0) {
-    const index = ((page % BACKGROUND_IDS.length) + BACKGROUND_IDS.length) % BACKGROUND_IDS.length;
+    const variant = ((page % 18) + 18) % 18;
+    const index = variant < 12 ? variant : 9;
     const id = BACKGROUND_IDS[index];
+    const depth = variant === 12 || variant === 15 ? 11 : variant === 13 || variant === 16 ? 21 : variant === 14 || variant === 17 ? 31 : 1;
+    const reduced = variant >= 15;
+    const opts = { depth, reduced };
     ctx.fillStyle = PAL.night[0];
     ctx.fillRect(0, 0, screen.w, screen.h);
     drawText(ctx, `${String(index + 1).padStart(2, '0')}  ${TITLES[index]}`, 10, 7, { color: PAL.ui.text });
-    drawText(ctx, 'PALETTE + TWO SCANLINE TAPESTRIES', 10, 20, { font: 'small', color: PAL.ui.faint });
+    drawText(ctx, index < 9 ? 'PALETTE + TWO SCANLINE TAPESTRIES' : `${id === 'duel' ? 'SEA WIND + CARTOGRAPHY' : `DEPTH B${depth} + STATIC MASONRY`}${reduced ? ' · STILL' : ''}`, 10, 20, { font: 'small', color: PAL.ui.faint });
     if (screen.w > screen.h) {
-      sample(ctx, 10, 44, 238, 134, id, t, 'LANDSCAPE');
-      sample(ctx, 268, 31, 102, 170, id, t, 'PORTRAIT');
+      sample(ctx, 10, 44, 238, 134, id, t, 'LANDSCAPE', opts);
+      sample(ctx, 268, 31, 102, 170, id, t, 'PORTRAIT', opts);
       drawText(ctx, id, 10, 186, { color: PAL.ui.gold });
     } else {
-      sample(ctx, 8, 37, 200, 113, id, t, 'LANDSCAPE');
+      sample(ctx, 8, 37, 200, 113, id, t, 'LANDSCAPE', opts);
       const h = Math.min(216, screen.h - 181);
       const w = Math.round(h * 0.6);
-      sample(ctx, Math.floor((screen.w - w) / 2), 165, w, h, id, t, 'PORTRAIT');
+      sample(ctx, Math.floor((screen.w - w) / 2), 165, w, h, id, t, 'PORTRAIT', opts);
     }
   },
 };

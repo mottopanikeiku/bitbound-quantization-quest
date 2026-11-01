@@ -5,7 +5,7 @@ import { Pix, bayer, u32, buildPaletteLUT, posterize, shadeRamp } from './paint.
 import { clamp, makeCanvas, hash2 } from '../engine/util.js';
 import { drawText } from '../engine/font.js';
 
-export const TRANSITION_KINDS = ['battle-in', 'battle-out', 'fade', 'restore', 'wipe'];
+export const TRANSITION_KINDS = ['battle-in', 'battle-out', 'fade', 'restore', 'wipe', 'descend'];
 const INK = u32(PAL.ink);
 const GOLD = u32(PAL.gold[6]);
 const TEAL = u32(PAL.teal[6]);
@@ -156,6 +156,66 @@ function quantizeOut(ctx, screen, p, from, reduced) {
   if (p > 0.85) mask(ctx, w, h, (p - 0.85) / 0.15, 'fade');
 }
 
+const descendDither = new WeakMap();
+
+function descendCover(ctx, w, h, p, reduced) {
+  if (reduced) {
+    let bank = descendDither.get(ctx);
+    if (!bank) {
+      bank = Array.from({ length: 17 }, (_, level) => {
+        const tile = new Pix(4, 4);
+        tile.rect(0, 0, 4, 4, (x, y) => bayer(x, y) < level / 16 ? PAL.ink : null);
+        return ctx.createPattern(tile.toCanvas(), 'repeat');
+      });
+      descendDither.set(ctx, bank);
+    }
+    ctx.fillStyle = bank[Math.round(p * 16)];
+    ctx.fillRect(0, 0, w, h);
+    return;
+  }
+  // Sixteen shaft courses close toward the dark centre: bounded canvas calls,
+  // not a screen-sized CPU mask. The whole scene remains at its original scale.
+  const opening = (1 - p) ** 1.3;
+  const halfH = Math.round(h * opening / 2);
+  const top = (h >> 1) - halfH;
+  const bottom = (h >> 1) + halfH;
+  ctx.fillStyle = PAL.ink;
+  ctx.fillRect(0, 0, w, top);
+  ctx.fillRect(0, bottom, w, h - bottom);
+  const course = Math.max(1, Math.ceil((bottom - top) / 16));
+  for (let y = top; y < bottom; y += course) {
+    const edge = Math.abs(y - h / 2) / Math.max(1, halfH);
+    const inset = Math.round(w * (1 - opening) / 2 + edge * p * 12);
+    const height = Math.min(course, bottom - y);
+    ctx.fillStyle = PAL.ink;
+    ctx.fillRect(0, y, inset, height);
+    ctx.fillRect(w-inset, y, inset, height);
+    ctx.fillStyle = p < 0.56 ? PAL.teal[2] : PAL.violet[2];
+    ctx.fillRect(inset, y, 1, height);
+    ctx.fillRect(w-inset-1, y, 1, height);
+  }
+}
+
+function descend(ctx, screen, p, from, reduced) {
+  const { w, h } = screen;
+  if (from) {
+    const bits = p < 0.15 ? 8 : p < 0.34 ? 4 : p < 0.56 ? 2 : 1;
+    const source = snapshot(from, w, h).quantized[bits];
+    if (reduced) ctx.drawImage(source, 0, 0);
+    else {
+      ctx.fillStyle = PAL.ink;
+      ctx.fillRect(0, 0, w, h);
+      const fall = Math.round(p * p * h);
+      for (let y = 0; y < h; y += 8) {
+        const inset = Math.round(p * p * Math.abs(y - h / 2) * 0.24);
+        const height = Math.min(8, h - y);
+        ctx.drawImage(source, inset, y, w - inset * 2, height, inset, y - fall, w - inset * 2, height);
+      }
+    }
+  }
+  descendCover(ctx, w, h, p, reduced);
+}
+
 /** p is amount of cover, for both 0→1 covering and 1→0 revealing. */
 export function drawTransition(ctx, screen, kind, p, { from = null, reduced = false } = {}) {
   if (p <= 0) return;
@@ -165,6 +225,7 @@ export function drawTransition(ctx, screen, kind, p, { from = null, reduced = fa
     return;
   }
   if (kind === 'battle-in') quantizeOut(ctx, screen, p, from, reduced);
+  else if (kind === 'descend') descend(ctx, screen, p, from, reduced);
   // Large moving irises/wipes become stationary ordered dither in reduced motion.
   else mask(ctx, screen.w, screen.h, p, reduced ? 'fade' : kind);
 }
@@ -215,20 +276,23 @@ function sampleSnapshot(w, h) {
 
 export const galleries = {
   transitions(ctx, screen, t, page = 0) {
-    const kind = TRANSITION_KINDS[((page % TRANSITION_KINDS.length) + TRANSITION_KINDS.length) % TRANSITION_KINDS.length];
+    const variant = ((page % (TRANSITION_KINDS.length * 2)) + TRANSITION_KINDS.length * 2) % (TRANSITION_KINDS.length * 2);
+    const kind = TRANSITION_KINDS[variant % TRANSITION_KINDS.length];
+    const reduced = variant >= TRANSITION_KINDS.length;
     const snapshot = sampleSnapshot(screen.w, screen.h);
     ctx.drawImage(snapshot, 0, 0);
     const cycle = t % 5;
     const p = cycle < 0.8 ? 0 : cycle < 2.4 ? (cycle - 0.8) / 1.6 : cycle < 3 ? 1 : cycle < 4.6 ? 1 - (cycle - 3) / 1.6 : 0;
-    drawTransition(ctx, screen, kind, p, { from: snapshot });
+    drawTransition(ctx, screen, kind, p, { from: snapshot, reduced });
     // Labels are outside the transition on purpose: the gallery identifies a fully covered frame.
     ctx.fillStyle = PAL.ink;
     ctx.fillRect(5, 5, Math.min(screen.w - 10, 229), 27);
-    drawText(ctx, `${kind}  COVER ${Math.round(p * 100)}%`, 10, 9, { color: PAL.ui.gold });
+    drawText(ctx, `${kind}  ${reduced ? 'STILL ' : ''}COVER ${Math.round(p * 100)}%`, 10, 9, { color: PAL.ui.gold });
     const caption = kind === 'battle-in' ? 'LIVE → 8 / 4 / 2 / 1 BIT → INK'
       : kind === 'restore' ? 'A DITHERED RING RETURNS THE COLOUR'
       : kind === 'wipe' ? 'A STEPPED EDGE BETWEEN TWO SCENES'
       : kind === 'battle-out' ? 'THE IRIS OPENS BACK INTO THE WORLD'
+      : kind === 'descend' ? 'FALLING COURSES · COLOUR DEPTH SHRINKS'
       : 'ORDERED DITHER, NEVER A GREY FADE';
     drawText(ctx, caption, 10, 22, { font: 'small', color: PAL.ui.dim });
   },
