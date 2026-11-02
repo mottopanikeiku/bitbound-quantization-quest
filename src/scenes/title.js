@@ -133,7 +133,7 @@ export class TitleScene {
     const { w, h, portrait } = screen, cx = Math.round(w / 2);
     drawIsleVista(ctx, screen, t, { reduced: this.game.reducedMotion });
     const top = portrait ? 42 : 24;
-    drawText(ctx, 'A SMALL WORLD. A LITTLE LESS PRECISION.', cx, top - 9, { font: 'small', align: 'center', color: PAL.cream[1], shadow: PAL.ink });
+    drawText(ctx, 'A QUANTIZATION RPG', cx, top - 9, { font: 'small', align: 'center', color: PAL.cream[1], shadow: PAL.ink });
     drawLogo(ctx, cx, top);
     drawText(ctx, 'THE STATIC ISLE', cx, top + 48, { align: 'center', color: PAL.cream[3], shadow: PAL.ink });
     const sy = top + 63;

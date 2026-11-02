@@ -485,7 +485,7 @@ export class Battle {
     this._coach('technique', undefined, true);
     if (spell.fizzle) this._coach('fizzle', undefined, true);
     else if (spell.perfect) {
-      if (spell.clippedCount) this._coach('clippedPerfect', 'PERFECT fit — tiny clipping stayed within the error budget.', true);
+      if (spell.clippedCount) this._coach('clippedPerfect', 'PERFECT fit: tiny clipping stayed within the error budget.', true);
       else this._coach('perfect', undefined, true);
     } else if (spell.clippedCount && score < 0.95) this._coach('clipped', undefined, true);
     if (this.threadHp && spell.threadDamages?.some(damage => damage === 0)) this._coach('thinThread', 'The thin thread rounded to zero. It needs its own ruler.', true);
@@ -547,7 +547,7 @@ export class Battle {
     const r = battleLayout(this.game.screen ?? { w: 384, h: 216 }).party;
     this.vfx.spawn(judgement.grade === 'miss' ? 'hit' : 'guard', r.x + Math.floor(r.w / 2), r.y + 12);
     this.vfx.text('−' + damage + ' HP' + (judgement.grade === 'perfect' ? ' · PERFECT +' + recovered + ' B' : ''), r.x + Math.floor(r.w / 2), r.y, { color: judgement.grade === 'miss' ? PAL.ui.bad : PAL.ui.good, font: 'body', ms: this.attack.charge ? 650 : 600, rise: this.game.reducedMotion ? 0 : 14 });
-    this._say((judgement.grade === 'perfect' ? 'PERFECT guard! +' + recovered + ' B charge. ' : judgement.grade === 'good' ? 'GOOD guard! ' : this.guardFeedback + ' — tap used. ') + damage + ' HP lost.');
+    this._say((judgement.grade === 'perfect' ? 'PERFECT guard! +' + recovered + ' B charge. ' : judgement.grade === 'good' ? 'GOOD guard! ' : this.guardFeedback + ': tap used. ') + damage + ' HP lost.');
     if (this.hero.hp <= 0) return this._end('lost');
     this.hitIndex++;
     if (this.hitIndex >= this.attack.hits.length) {
