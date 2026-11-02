@@ -36,7 +36,7 @@ export function duelEssence(id, round = 0, random = () => 0.5) {
   if (id === 'fen-crown' && index === 2) {
     essence.rows = [essence.rows[1], essence.rows[2], essence.rows[0]];
     essence.sensitivities = [essence.sensitivities[1], essence.sensitivities[2], essence.sensitivities[0]];
-    essence.morphHint = 'The fine-detail head moved with its sensitivity. Revisit the allocation, not just the ranges.';
+    essence.morphHint = 'The fine-detail head moved with its sensitivity, so revisit the allocation, not just the ranges.';
   }
   return essence;
 }

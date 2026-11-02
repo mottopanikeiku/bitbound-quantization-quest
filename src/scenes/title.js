@@ -111,7 +111,7 @@ export class TitleScene {
   enter() {
     this.selected = 0; this.confirming = false; this.age = 0; this.game.setMusicScene('title');
     if (this.game.state.started) this.game.announce(`Continue selected. ${continueSummary(this.game.state)}.`);
-    else this.game.announce('New Game selected. A or Enter begins the adventure.');
+    else this.game.announce('New Game is selected, and A or Enter begins the adventure.');
   }
   items() { return this.confirming ? ['Keep my adventure', 'Begin anew'] : this.game.state.started ? ['Continue', 'New Game'] : ['New Game']; }
   update(dt, input) {

@@ -42,7 +42,7 @@ export class PauseMenu {
     else if (key === 'resume') { this.close(); this.handlers.onResume?.(); }
     else if (key === 'notes') this.handlers.onNotes?.();
     else if (key === 'journal') this.handlers.onJournal?.();
-    else if (key === 'flee') { this.confirming = 'flee'; this.selected = 0; this.game.announce('Leave this battle? Stay in battle is selected. No victory rewards. Leaving a Well battle ends this expedition.'); }
+    else if (key === 'flee') { this.confirming = 'flee'; this.selected = 0; this.game.announce('Leave this battle? Stay in battle is selected. Leaving forfeits victory rewards, and leaving a Well battle ends this expedition.'); }
     else if (key === 'music') this.handlers.onToggleMusic?.();
     else if (key === 'fullscreen') this.handlers.onToggleFullscreen?.();
     else if (key === 'restart') { this.confirming = 'restart'; this.selected = 0; this.game.announce('Erase all adventure progress? Keep exploring is selected.'); }
@@ -58,7 +58,7 @@ export class PauseMenu {
     drawText(ctx, this.confirming === 'flee' ? 'Leave this battle?' : this.confirming ? 'A new beginning?' : 'A quiet moment', x + 28, y + 13, { color: this.confirming ? PAL.ui.bad : PAL.ui.gold });
     if (this.confirming) {
       let cy = y + 36;
-      const copy = this.confirming === 'flee' ? 'No victory rewards. In the Well, fleeing ends your expedition; records remain.' : 'This erases your friends, discoveries and saved adventure.';
+      const copy = this.confirming === 'flee' ? 'Fleeing gives no victory rewards, and in the Well it ends your expedition, although records remain.' : 'This erases your friends, discoveries and saved adventure.';
       for (const line of wrapText(copy, w - 28)) { drawText(ctx, line, x + 14, cy, { color: PAL.ui.dim }); cy += 11; }
       drawMenu(ctx, x + 14, y + 86, this.items(), this.selected, { colWidth: w - 27, rowHeight: 19, t: this.game.reducedMotion ? 0 : t });
     } else {

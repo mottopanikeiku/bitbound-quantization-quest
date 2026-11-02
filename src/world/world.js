@@ -685,7 +685,7 @@ export class World {
     } else if (item.interaction === 'specimen') {
       this._openPanel(item.name, ['Practise', 'Leave'], (choice) => {
         if (choice === 0) game.startBattle({ mode: 'practice', foeId: `static-${item.zone}`, species: item.species, zone: item.zone, golden: item.golden });
-      }, 'A friendly sanctuary. No island supplies change.');
+      }, 'This friendly sanctuary changes no island supplies.');
     } else if (item.interaction === 'fen') {
       this._openPanel('Fen Float', ['Talk', 'Duel', 'Later'], (choice) => {
         if (choice === 0) game.say(fenDialogue(item.id, game.state));
@@ -693,7 +693,7 @@ export class World {
       }, game.state.rival?.won?.includes(item.id) ? 'My shoulders still thank you. Rematch?' : 'An atlas, a scarf, a friendly challenge.');
     }
     else if (item.interaction === 'stone') {
-      if (this._stoneAwake(item.zone)) game.say([stoneText(item.zone), `The stone is awake. Its guardian shrine is unsealed. ${game.input?.lastDevice === 'touch' ? 'START → Field Notes' : 'N opens your Field Notes'} to review the technique.`]);
+      if (this._stoneAwake(item.zone)) game.say([stoneText(item.zone), `The stone is awake and its guardian shrine is unsealed. ${game.input?.lastDevice === 'touch' ? 'START → Field Notes' : 'N opens your Field Notes'} to review the technique.`]);
       else game.say([stoneText(item.zone)], { onDone: () => this.awakenStone(item.zone) });
     } else if (item.interaction === 'shrine') {
       if (this.restored.has(item.zone) || game.state.friends.includes(item.zone)) {
@@ -702,8 +702,8 @@ export class World {
           if (choice === 0) game.startBattle({ mode: 'practice', foeId: GUARDIANS[item.zone].key, guardian: true, zone: item.zone });
         }, `${GUARDIAN_HOME_LINES[item.zone]} Rematches keep island supplies safe.`);
       }
-      else if (item.zone > 0 && !game.state.friends.includes(item.zone - 1)) game.say('The Static seal is still strong. Help the earlier guardians first.');
-      else if (!this._stoneAwake(item.zone)) game.say('The shrine is sealed. Wake this zone’s glowing Grid Stone first.');
+      else if (item.zone > 0 && !game.state.friends.includes(item.zone - 1)) game.say('The Static seal is still strong, so help the earlier guardians first.');
+      else if (!this._stoneAwake(item.zone)) game.say('The shrine stays sealed until you wake this zone’s glowing Grid Stone.');
       else game.say(shrineDialogue(item.zone), { onDone: () => game.startBattle({ foeId: GUARDIANS[item.zone].key, guardian: true, uid: item.id, zone: item.zone }) });
     } else if (item.interaction === 'well') {
       if (game.state.friends.length >= 2) game.enterWell();
@@ -724,7 +724,7 @@ export class World {
           onClose: () => {
             this.puzzle = null;
             this.contactCooldown = 2;
-            if (this.solved.has(item.id)) game.toast('SNAP! The crossing is steady. Reach the bit shard.', { kind: 'reward', ms: 3000 });
+            if (this.solved.has(item.id)) game.toast('SNAP! The crossing is steady, so reach for the bit shard.', { kind: 'reward', ms: 3000 });
           },
         });
       }
@@ -753,7 +753,7 @@ export class World {
     this._openPanel('Travel to a rested camp', [...camps.map((camp) => camp.zone < 0 ? HUB.name : ZONES[camp.zone].name), 'Back'], (choice) => {
       if (choice < camps.length && campReachable(this.game.state, camps[choice])) this.game.travelTo(camps[choice].id);
       else this._openPanel('Campfire', ['Stay', 'Travel', 'Leave'], (index) => { if (index === 1) this._travelPanel(current); }, 'Rested & refilled. Stay awhile.');
-    }, camps.length ? 'Only rested hearths. No extra rest on arrival.' : 'Rest at another camp to make a hearth path.');
+    }, camps.length ? 'Only rested hearths appear here, and arriving gives no extra rest.' : 'Rest at another camp to make a hearth path.');
   }
 
   _updatePanel(input) {

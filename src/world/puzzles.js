@@ -26,7 +26,7 @@ export const PUZZLES = [
     id: 'bridge-0', zone: 0, name: 'Almost-Level Crossing',
     values: [0.59, 0.68, 0.76, 0.84],
     goal: 'Make all four heights share one level, without clipping.',
-    hint: 'Try 2 bits. Cover the tallest stone; roomy buckets can bring neighbours together.',
+    hint: 'Try 2 bits and cover the tallest stone, because roomy buckets can bring neighbours together.',
     success: 'Four heights, one bucket! Lost detail made a flat walkway.',
     witness: { bits: 2, p: 0.7 },
   },
@@ -34,8 +34,8 @@ export const PUZZLES = [
     id: 'bridge-1', zone: 1, name: 'Two Different Banks', defaultBits: 2,
     values: [0.88, 0.96, 1.72, 1.88], targets: [0.9, 0.9, 1.8, 1.8], tolerance: 0.12,
     maxBits: 2, packetLimit: 4,
-    goal: '2-bit banks: land at 0.9 and 1.8, within 0.12. No clipping.',
-    hint: 'Move zero to code 0. Four positive-side levels can reach both banks; a mirrored 2-bit grid cannot.',
+    goal: 'With 2 bits, land at 0.9 and 1.8 within 0.12 and without clipping.',
+    hint: 'Move zero to code 0 so that four positive-side levels can reach both banks, which a mirrored 2-bit grid cannot.',
     success: 'Two banks matched! Moving zero made room for two positive rungs.',
     witness: { bits: 2, tool: true, zeroCode: 0, p: 0.95 },
   },
@@ -47,8 +47,8 @@ export const PUZZLES = [
       { name: 'High tide', samples: [0.7, 1.45, 2.58, 3.6], max: 3.6 },
     ],
     tolerance: 0.3, packetLimit: 4,
-    goal: 'Forecast: high tide. Cover hidden heights; error at most 0.3. 4B packet.',
-    hint: 'Tide Gauge: select the high-tide archive, then cover its old peak. Live heights appear only after lock.',
+    goal: 'High tide is forecast, so cover hidden heights within 0.3 in a 4B packet.',
+    hint: 'In the Tide Gauge, select the high-tide archive and cover its old peak, since live heights appear only after you lock.',
     success: 'High tide covered! Past samples helped choose a range before seeing today.',
     witness: { bits: 4, tool: true, archive: 1, p: 0.64 },
   },
@@ -57,8 +57,8 @@ export const PUZZLES = [
     values: [0.046875, 0.375, 2, 3],
     groups: [[1, 2, 3], [0.125, 0.25, 0.375], [0.015625, 0.03125, 0.046875]],
     physical: [[2, 2], [1, 2], [0, 1], [0, 2]], tolerance: 0.18, packetLimit: 10,
-    goal: 'Save big, medium and tiny rows. Error ≤18% of each peak; 10B packet.',
-    hint: 'Use 3 bits and assign each row its own ruler. One big ruler erases tiny steps.',
+    goal: 'Save the big, medium and tiny rows within 18% of each peak in a 10B packet.',
+    hint: 'Use 3 bits and assign each row its own ruler, because one big ruler erases tiny steps.',
     success: 'Three scales survived! Extra ruler metadata saved the tiny staircase.',
     witness: { bits: 3, tool: true, groups: [0, 1, 2], p: 0.67 },
   },
@@ -66,17 +66,17 @@ export const PUZZLES = [
     id: 'bridge-4', zone: 4, name: 'The Hot Pressure Plate', defaultBits: 2,
     values: [0.42, 0.77, 1.13, 1.61], pressures: [1, 18, 1, 1], hot: 1,
     tolerance: 1.7, maxBits: 2, packetLimit: 6,
-    goal: '2 bits + one exact plate. Keep ×18 plate exact; weighted error ≤1.7.',
-    hint: 'Plate 2 carries eighteen times the pressure. Spotlight that plate; the others may round.',
-    success: 'The heavy plate stayed exact. Small errors on light plates were safe.',
+    goal: 'Use 2 bits and keep the ×18 plate exact, with weighted error ≤1.7.',
+    hint: 'Plate 2 carries eighteen times the pressure, so Spotlight it and let the others round.',
+    success: 'The heavy plate stayed exact, so small errors on the light plates were safe.',
     witness: { bits: 2, tool: true, spotlight: 1, p: 0.7 },
   },
   {
     id: 'bridge-5', zone: 5, name: 'The Coupled Crossing',
     values: [1, 1, 2, 3], inputs: [16, 1, 2, 3], weights: [0.0625, 1, 1, 1],
     tolerance: 0.2, packetLimit: 8,
-    goal: 'Keep products 1, 1, 2, 3 within 20%. Round inputs AND weights; 8B.',
-    hint: 'Divide input 1 by 8 and multiply its weight by 8. Products stay unchanged before rounding.',
+    goal: 'Keep products 1, 1, 2, 3 within 20% while rounding inputs AND weights in 8B.',
+    hint: 'Divide input 1 by 8 and multiply its weight by 8, which leaves products unchanged before rounding.',
     success: 'Products preserved! Opposite rescaling shared the rounding difficulty.',
     witness: { bits: 4, tool: true, factor: 8, p: 0.74 },
   },
@@ -89,8 +89,8 @@ export const PUZZLES = [
       [-0.125, -0.12, -0.11, 0, 0, 0.11, 0.12, 0.125],
     ],
     physical: [[2, 7], [1, 6], [0, 5], [0, 7]], tolerances: [0.1, 0.09, 0.04], packetLimit: 15,
-    goal: '15B total. Fine / middle / coarse errors ≤0.1 / 0.09 / 0.04.',
-    hint: 'Try 4 / 3 / 2 bits. The fine row needs detail; the coarse row can lend it space.',
+    goal: 'Fit 15B in total with fine / middle / coarse errors ≤0.1 / 0.09 / 0.04.',
+    hint: 'Try 4 / 3 / 2 bits, because the fine row needs detail and the coarse row can lend it space.',
     success: 'One packet, unequal precision! Spare coarse bits paid for the fine row.',
     witness: { tool: true, budget: [4, 3, 2], p: 0.66 },
   },
@@ -241,21 +241,21 @@ export function previewPuzzle(puzzle, options = {}) {
 }
 
 function feedback(puzzle, result, options) {
-  if (!result.precisionOK) return `This crossing has ${puzzle.maxBits}-bit sockets. Extra bits cannot fit.`;
-  if (!result.packetOK) return `${result.packet.total}B exceeds ${puzzle.packetLimit}B. Move or remove precision; no bytes are spent.`;
-  if (result.hidden) return options.tool ? 'Past samples only. Cover the high-tide peak; lock reveals today.' : 'Calm range only. Open the Tide Gauge to inspect past high tides.';
+  if (!result.precisionOK) return `This crossing has ${puzzle.maxBits}-bit sockets, so extra bits cannot fit.`;
+  if (!result.packetOK) return `${result.packet.total}B exceeds the ${puzzle.packetLimit}B limit, so move or remove precision at no byte cost.`;
+  if (result.hidden) return options.tool ? 'You only have past samples, so cover the high-tide peak and lock to reveal today.' : 'That range only covers calm, so open the Tide Gauge to inspect past high tides.';
   if (result.solved) return puzzle.success;
-  if (result.clippedCount) return `${result.clippedCount} values clipped. Widen the ruler that missed its tallest values.`;
-  if (puzzle.zone === 0) return 'Different rungs. Fewer bits make roomier rounding buckets.';
-  if (puzzle.zone === 1) return 'Both banks need positive rungs. Put zero at code 0; widen toward the banks.';
-  if (puzzle.zone === 2) return 'Tide covered, but rounding moved a height too far. Try 4 bits and a closer range.';
+  if (result.clippedCount) return `${result.clippedCount} values clipped, so widen the ruler that missed its tallest values.`;
+  if (puzzle.zone === 0) return 'The heights landed on different rungs, and fewer bits make roomier rounding buckets.';
+  if (puzzle.zone === 1) return 'Both banks need positive rungs, so put zero at code 0 and widen toward the banks.';
+  if (puzzle.zone === 2) return 'The tide is covered, but rounding moved a height too far, so try 4 bits and a closer range.';
   if (puzzle.zone === 3) {
     const worst = result.metrics.rowErrors.indexOf(Math.max(...result.metrics.rowErrors));
-    return `${RULER_NAMES[worst]} steps lost detail. Match that row to its ruler; use 3 bits.`;
+    return `${RULER_NAMES[worst]} steps lost detail, so match that row to its ruler and use 3 bits.`;
   }
-  if (puzzle.zone === 4) return result.metrics.hotError >= EPSILON ? 'Plate 2 carries ×18 pressure. Keep that plate exact, not a light neighbour.' : 'The hot plate is exact. Tighten the range to reduce the other pressure errors.';
-  if (puzzle.zone === 5) return 'A product changed too much. Balance input 1 down and its paired weight up.';
-  return 'The fine row needs 4 bits, the middle 3. Borrow space from the coarse row.';
+  if (puzzle.zone === 4) return result.metrics.hotError >= EPSILON ? 'Plate 2 carries ×18 pressure, so keep that plate exact rather than a light neighbour.' : 'The hot plate is exact, so tighten the range to reduce the other pressure errors.';
+  if (puzzle.zone === 5) return 'A product changed too much, so balance input 1 down and its paired weight up.';
+  return 'The fine row needs 4 bits and the middle 3, so borrow space from the coarse row.';
 }
 
 function summary(puzzle, result) {
@@ -275,15 +275,15 @@ export function bridgeInputLabels(input) {
 
 /** Real parameter rows, shared by the keyboard and touch D-pad. */
 export function puzzleControls(puzzle, settings, hasTool = true) {
-  const controls = [{ id: 'bits', label: 'Bits', value: String(settings.bits), choices: BIT_CHOICES, help: puzzle.maxBits ? `These sockets accept at most ${puzzle.maxBits} bits. Compare the grids without spending bytes.` : 'More bits make finer levels, but larger toy packets.' }];
+  const controls = [{ id: 'bits', label: 'Bits', value: String(settings.bits), choices: BIT_CHOICES, help: puzzle.maxBits ? `These sockets accept at most ${puzzle.maxBits} bits, and you can compare the grids without spending bytes.` : 'More bits make finer levels, but larger toy packets.' }];
   if (puzzle.zone > 0) controls.push({ id: 'tool', label: TECHNIQUES[ZONES[puzzle.zone].technique].name, value: hasTool ? settings.tool ? 'on' : 'off' : 'locked', help: hasTool ? puzzle.hint : 'Wake this region’s Grid Stone to learn the instrument.' });
   if (settings.tool && hasTool) {
     if (puzzle.zone === 1) controls.push({ id: 'zeroCode', label: 'Zero code', value: String(settings.zeroCode), choices: [0, 1, 2, 3], help: 'Code 0 leaves every other code for positive heights.' });
     if (puzzle.zone === 2) controls.push({ id: 'archive', label: 'Archive', value: puzzle.archives[settings.archive].name, choices: [0, 1], help: `Past: ${puzzle.archives[settings.archive].samples.map(number).join(' / ')}. Forecast: high tide.` });
-    if (puzzle.zone === 3) settings.groups.forEach((ruler, i) => controls.push({ id: `group-${i}`, label: `${RULER_NAMES[i]} row`, value: RULER_NAMES[ruler], choices: [0, 1, 2], row: i, help: 'Assign big / medium / tiny rulers to matching rows. Each scale costs 2B.' }));
-    if (puzzle.zone === 4) controls.push({ id: 'spotlight', label: 'Keep plate', value: `${settings.spotlight + 1} (×${puzzle.pressures[settings.spotlight]})`, choices: [0, 1, 2, 3], help: 'Pick the ×18 plate. Its exact value plus index occupies 3B in this toy.' });
-    if (puzzle.zone === 5) controls.push({ id: 'factor', label: 'Balance factor', value: `×${settings.factor}`, choices: FACTORS, help: 'Input 1 ÷ factor; weight 1 × factor. Their unrounded product stays 1.' });
-    if (puzzle.zone === 6) settings.budget.forEach((bits, i) => controls.push({ id: `budget-${i}`, label: ROW_NAMES[i], value: `${bits} bits`, choices: BIT_CHOICES, row: i, help: `${ROW_NAMES[i]} row: error at most ${puzzle.tolerances[i]}. All three row packets must fit 15B.` }));
+    if (puzzle.zone === 3) settings.groups.forEach((ruler, i) => controls.push({ id: `group-${i}`, label: `${RULER_NAMES[i]} row`, value: RULER_NAMES[ruler], choices: [0, 1, 2], row: i, help: 'Assign big / medium / tiny rulers to matching rows, where each scale costs 2B.' }));
+    if (puzzle.zone === 4) controls.push({ id: 'spotlight', label: 'Keep plate', value: `${settings.spotlight + 1} (×${puzzle.pressures[settings.spotlight]})`, choices: [0, 1, 2, 3], help: 'Pick the ×18 plate, whose exact value plus index occupies 3B in this toy.' });
+    if (puzzle.zone === 5) controls.push({ id: 'factor', label: 'Balance factor', value: `×${settings.factor}`, choices: FACTORS, help: 'Input 1 is divided by the factor and weight 1 multiplied by it, so their unrounded product stays 1.' });
+    if (puzzle.zone === 6) settings.budget.forEach((bits, i) => controls.push({ id: `budget-${i}`, label: ROW_NAMES[i], value: `${bits} bits`, choices: BIT_CHOICES, row: i, help: `${ROW_NAMES[i]} row error must stay at most ${puzzle.tolerances[i]}, and all three row packets must fit 15B.` }));
   }
   const rowCount = puzzle.zone === 3 || puzzle.zone === 6 ? 3 : puzzle.zone === 5 ? 2 : 1;
   if (rowCount > 1) controls.push({ id: 'activeRow', label: 'Inspect row', value: `${settings.activeRow + 1} / ${rowCount}`, choices: Array.from({ length: rowCount }, (_, i) => i), help: 'Inspect a full-size row here. During lock or result, left/right also changes rows.' });
@@ -336,7 +336,7 @@ export class SnapBridge {
     this.active = true;
     this.result = this.preview();
     const keys = bridgeInputLabels(game.input);
-    game.announce(`${puzzle.name}. ${puzzle.goal} Up/down selects a setting; left/right changes it. ${keys.confirm} starts the range. No bytes spent.`);
+    game.announce(`${puzzle.name}. ${puzzle.goal} Up and down select a setting and left and right change it, while ${keys.confirm} starts the range without spending bytes.`);
   }
 
   get p() { return breathing(this.clock, this.puzzle.period); }
@@ -387,7 +387,7 @@ export class SnapBridge {
         this.clock = this.puzzle.period / 4;
         this.game.audio.play('scan');
         const keys = bridgeInputLabels(input);
-        this.game.announce(`${keys.confirm} locks; ${keys.steady} steadies. ${this.puzzle.hiddenLive ? 'Live tide stays hidden until lock.' : this.puzzle.goal}`);
+        this.game.announce(`${keys.confirm} locks and ${keys.steady} steadies. ${this.puzzle.hiddenLive ? 'Live tide stays hidden until lock.' : this.puzzle.goal}`);
       }
       return;
     }

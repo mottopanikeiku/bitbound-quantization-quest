@@ -99,13 +99,13 @@ function variant(entry, turn, random, phase, { successes = 0, crosswind = false,
   if (warden && second) {
     essence.morphName = 'Second pattern';
     essence.morphHint = [
-      'The terraces become a narrow ripple with taller tails. Inspect the new range trade.',
-      'The bell now lies below zero. Lock both affine edges around the negative notes.',
-      'The weather order changes. Keep using the forecast and the independent archives.',
-      'New bends need four-bit steps. Keep a separate ruler for every thread.',
-      'The hot pair splits apart. Follow the input heat, not the biggest weight.',
-      'Products now have three magnitudes. Keep Balance and try three bits.',
-      'The fine-detail head moves with its sensitivity. Move its eight-bit allocation too.',
+      'The terraces become a narrow ripple with taller tails, so inspect the new range trade.',
+      'The bell now lies below zero, so lock both affine edges around the negative notes.',
+      'The weather order changes, so keep using the forecast and the independent archives.',
+      'New bends need four-bit steps, so keep a separate ruler for every thread.',
+      'The hot pair splits apart, so follow the input heat, not the biggest weight.',
+      'Products now have three magnitudes, so keep Balance and try three bits.',
+      'The fine-detail head moves with its sensitivity, so move its eight-bit allocation too.',
     ][entry.zone];
   }
   return modifiers(essence, entry, { successes, crosswind, regime });

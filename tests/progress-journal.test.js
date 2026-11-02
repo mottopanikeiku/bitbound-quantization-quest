@@ -59,6 +59,6 @@ test('Dex discloses cosmetic golden odds before discovery and after a win', () =
     const copy = f.journal.detailLines(entry).join(' ');
     assert.match(copy, /1 in 32 per specimen per rest visit/);
     assert.match(copy, /Reloads keep the roll/);
-    assert.match(copy, /Same fight, no extra rewards/);
+    assert.match(copy, /the fight stays the same with no extra rewards/);
   }
 });

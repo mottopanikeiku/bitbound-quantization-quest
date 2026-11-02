@@ -387,7 +387,7 @@ export class Game {
       state.hero = { hp: stats.maxHp, bytes: stats.maxBytes, snacks: Math.max(3, result.hero.snacks ?? 0) };
       after = () => {
         world.returnToCamp(state.camp);
-        this.toast('You wake by the campfire. Friends kept; try a new plan.', { kind: 'notice', ms: 4200 });
+        this.toast('You wake by the campfire with your friends kept, so try a new plan.', { kind: 'notice', ms: 4200 });
       };
     } else {
       const reward = won ? Math.max(0, Math.trunc(result.reward?.bytes ?? 0)) : 0;
@@ -565,7 +565,7 @@ export class Game {
     this.state.restCount = (this.state.restCount ?? 0) + 1;
     this.worldScene.world.respawnStaticlings();
     this.audio.play('heal');
-    this.toast('Rested: HP and bytes restored. Awake patrols return home.', { kind: 'notice', ms: 3200 });
+    this.toast('Resting restored your HP and bytes, and awake patrols have gone home.', { kind: 'notice', ms: 3200 });
     this.save();
   }
 

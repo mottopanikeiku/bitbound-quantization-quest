@@ -230,7 +230,7 @@ export class WellScene {
       const panelH = portrait ? Math.min(218, h - 108) : Math.min(196, h - 16), y = portrait ? 98 : Math.round((h - panelH) / 2);
       drawWindow(ctx, x, y, ww, panelH, summary ? 'gold' : 'default', t);
       let menuY = y + 60;
-      if (!this._unlocked()) { drawText(ctx, 'A lantern for later', x + 12, y + 12, { color: PAL.ui.gold }); drawParagraph(ctx, 'Bring two guardian friends. The Well will be here whenever you like.', x + 12, y + 33, ww - 24, { font: 'small' }); menuY = y + 104; }
+      if (!this._unlocked()) { drawText(ctx, 'A lantern for later', x + 12, y + 12, { color: PAL.ui.gold }); drawParagraph(ctx, 'Bring two guardian friends, and the Well will be here whenever you like.', x + 12, y + 33, ww - 24, { font: 'small' }); menuY = y + 104; }
       else if (summary) {
         drawText(ctx, `Cleared B${summary.depth} · ${summary.cause === 'defeat' ? 'Lantern home' : 'Climbed out'}`, x + 12, y + 11, { font: 'small', color: PAL.ui.gold });
         drawText(ctx, `Score ${summary.score} · seed ${seedHex(summary.seed)}`, x + 12, y + 27, { font: 'small' });
@@ -238,7 +238,7 @@ export class WellScene {
         drawText(ctx, `Best B${this.game.state.progress?.well?.best ?? 0} · best D/B ${summary.bestRatio.toFixed(2)}`, x + 12, y + 106, { font: 'small', color: PAL.ui.dim }); menuY = y + 128;
       } else if (this.view === 'confirm') {
         drawText(ctx, 'End saved expedition?', x + 12, y + 12, { color: PAL.ui.gold, font: 'small' });
-        drawParagraph(ctx, 'Only this run ends. Your island, discoveries and records stay.', x + 12, y + 34, ww - 24, { font: 'small' }); menuY = y + 82;
+        drawParagraph(ctx, 'Only this run ends, while your island, discoveries and records stay.', x + 12, y + 34, ww - 24, { font: 'small' }); menuY = y + 82;
       } else if (this.view === 'replace') {
         drawText(ctx, fitText(`Take ${boonOf(this.replaceOffer).name}?`, ww - 24, 'small'), x + 12, y + 12, { color: PAL.ui.gold, font: 'small' });
         const drop = boonOf(this.menu[this.selected]?.key);
@@ -249,14 +249,14 @@ export class WellScene {
         drawText(ctx, `B${card.depth} · ${card.warden ? 'WARDEN' : 'SPECIMEN'}${card.golden ? ' · GOLDEN' : ''}`, x + 12, y + 10, { color: PAL.ui.gold, font: 'small' });
         drawText(ctx, card.name, x + 12, y + 24, { color: PAL.ui.text });
         drawText(ctx, `${TECHNIQUES[card.family].name} · HP ${card.hp} · power ${card.power + (card.modifier?.id === 'warm-current' ? 2 : 0)}`, x + 12, y + 40, { font: 'small', color: PAL.ui.dim });
-        drawParagraph(ctx, card.modifier ? `${card.modifier.name}: ${card.modifier.text}` : 'No modifier. Read the pattern, then descend.', x + 12, y + 53, ww - 24, { font: 'small' });
+        drawParagraph(ctx, card.modifier ? `${card.modifier.name}: ${card.modifier.text}` : 'This floor has no modifier, so read the pattern and descend.', x + 12, y + 53, ww - 24, { font: 'small' });
         drawText(ctx, `You: ${run.hero.hp}/${run.limits.maxHp} HP · ${run.hero.bytes} B · ${run.hero.snacks} snacks`, x + 12, y + 82, { font: 'small' });
         drawText(ctx, `Score ${run.score} · seed ${seedHex(run.seed)}`, x + 12, y + 95, { font: 'small', color: PAL.ui.dim });
         if (run.lastFloor) { const s = run.lastFloor; drawText(ctx, `Last: +${s.total} = 100 +${s.components.efficiency} D/B +${s.components.perfect} P`, x + 12, y + 109, { font: 'small', color: PAL.ui.gold }); drawText(ctx, `+${s.components.guard} guard +${s.components.warden} warden`, x + 12, y + 120, { font: 'small', color: PAL.ui.dim }); }
         menuY = y + 138;
       } else {
         drawText(ctx, 'The Static Well', x + 12, y + 12, { color: PAL.ui.gold });
-        drawParagraph(ctx, 'Five-floor blocks. Your own 56 HP, 56 B, 3 snacks. No island risk.', x + 12, y + 34, ww - 24, { font: 'small' });
+        drawParagraph(ctx, 'Runs come in five-floor blocks with their own 56 HP, 56 B and 3 snacks, so your island is never at risk.', x + 12, y + 34, ww - 24, { font: 'small' });
         drawText(ctx, `Best B${this.game.state.progress?.well?.best ?? 0} · generator v${RUN_VERSION}`, x + 12, y + 69, { font: 'small', color: PAL.ui.dim }); menuY = y + 94;
       }
       drawMenu(ctx, x + 12, menuY, this.menu, this.selected, { colWidth: ww - 24, rowHeight: this.view === 'replace' ? 17 : 15, t: this.game.reducedMotion ? 0 : t });

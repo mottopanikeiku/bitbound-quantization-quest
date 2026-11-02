@@ -133,7 +133,7 @@ test('coach technique hints refer to the matching zone mechanic', () => {
 });
 
 test('first-grid and PERFECT copy explain reconstruction without claiming lossless snaps', () => {
-  const first = 'White dots are true values; lines are the levels. Red tethers show what the snap lost.';
+  const first = 'White dots are true values and lines are levels, and red tethers show what the snap lost.';
   assert.equal(COACH.nib.firstSnap, first);
   assert.equal(COACH['static-0'].firstSnap, first);
   assert.match(COACH.nib.perfect, /at least 98\.5% fidelity, not lossless/);

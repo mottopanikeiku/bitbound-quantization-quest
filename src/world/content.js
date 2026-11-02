@@ -5,13 +5,13 @@ import { GUARDIANS, ZONES, TECHNIQUES } from '../content/game-data.js';
 import { PORTRAIT_IDS } from '../art/portraits.js';
 import { PUZZLES } from './puzzles.js';
 
-export const INTRO_HINT = 'WASD / arrows walk. Shift runs. Enter talks. Esc pauses. N opens Field Notes.';
-export const TOUCH_HINT = 'The D-pad walks. Hold STEADY to run. A talks, B backs out, START pauses.';
+export const INTRO_HINT = 'WASD or the arrows walk and Shift runs, while Enter talks, Esc pauses and N opens Field Notes.';
+export const TOUCH_HINT = 'The D-pad walks and holding STEADY runs, while A talks, B backs out and START pauses.';
 const SEEDS = {
   hub: ['Eight bits make one byte.', 'A 16-bit number takes two bytes; a 4-bit code takes half a byte.'],
-  meadow: ['b bits give 2^b codes. Four bits give 16 codes.', 'Nearest-level rounding is off by at most half a step, unless the value clips.'],
+  meadow: ['b bits give 2^b codes, so four bits give 16 codes.', 'Nearest-level rounding is off by at most half a step, unless the value clips.'],
   grove: ['A zero-point shifts the grid so lopsided data can use every code.', 'Narrow symmetric INT4 uses -7 through 7; the -8 code goes unused.'],
-  cove: ['Calibration uses sample inputs to choose ranges before deployment. It is not retraining.', 'Values beyond the chosen range clip to an endpoint.'],
+  cove: ['Calibration uses sample inputs to choose ranges before deployment, without any retraining.', 'Values beyond the chosen range clip to an endpoint.'],
   heights: ['Group-wise quantization gives each block of weights its own scale.', 'A group of 128 weights can share one FP16 scale.'],
   forge: ['LLM.int8() keeps rare outlier feature dimensions in 16-bit and the rest in 8-bit.', 'A 16-bit number takes two bytes.'],
   archives: ['SmoothQuant divides activation channels by a factor and multiplies the matching weights by it.', 'Before rounding, those opposite rescalings leave their product unchanged.'],

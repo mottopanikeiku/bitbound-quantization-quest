@@ -21,7 +21,7 @@ export const BADGES = Object.freeze([
   ['seven-bridges', 'Side-Trail Engineer', 'Solve all seven authored Snap Bridges.'],
   ['sixteen-shards', 'Two Whole Bytes', 'Collect all sixteen island shards.'],
   ['eight-camps', 'Hearthfinder', 'Rest at all eight island camps.'],
-  ['dex-complete', 'Static Naturalist', 'Resolve all 21 species. Golden portraits are optional.'],
+  ['dex-complete', 'Static Naturalist', 'Resolve all 21 species, though golden portraits are optional.'],
   ['fen-three', 'Smaller Satchel', 'Win all three Fen Float duels.'],
   ['well-five', 'First Descent', 'Clear B5 in one Well expedition.'],
   ['well-fifteen', 'Lantern Below', 'Clear B15 in one Well expedition.'],

@@ -12,7 +12,7 @@ import { drawGradeStamp } from '../art/vfx.js';
 import { ASSISTS, assistAvailability } from './assists.js';
 import { TALLY_STEPS, TALLY_DURATION } from './grade.js';
 
-const COMMAND_HINTS = ['Lock a grid. Turn values into a spell.', 'Free: choose bits and techniques.', 'Brace next hit. Recover 12 B charge.', 'One partial plan per friend, per battle.', 'Heal half your max HP. Uses a turn.', 'Free: inspect the essence and a hint.'];
+const COMMAND_HINTS = ['Lock a grid to turn values into a spell.', 'Choose bits and techniques for free.', 'Brace for the next hit and recover 12 B of charge.', 'Each friend can offer one partial plan per battle.', 'Spend a turn to heal half your max HP.', 'Inspect the essence and get a hint for free.'];
 
 /**
  * Panels, creature and grid keep their designed composition inside a centred box; on larger or
@@ -281,7 +281,7 @@ function drawSpotlight(ctx, battle, layout, t) {
   const r = layout.work;
   drawWindow(ctx, r.x, r.y, r.w, r.h, 'gold', t);
   drawText(ctx, `SPOTLIGHT · KEEP ${battle.gear.spotlight}`, r.x + 9, r.y + 6, { color: PAL.ui.gold });
-  textBlock(ctx, 'This input multiplies this weight’s rounding error. Keep the hot channels.', r.x + 9, r.y + 19, r.w - 18, { font: 'small', maxLines: 2, color: PAL.ui.dim });
+  textBlock(ctx, 'This input multiplies this weight’s rounding error, so keep hot channels.', r.x + 9, r.y + 19, r.w - 18, { font: 'small', maxLines: 2, color: PAL.ui.dim });
   const hot = battle.salience;
   const cols = layout.portrait ? 8 : 16;
   const rows = Math.ceil(hot.length / cols);
@@ -433,7 +433,7 @@ function drawResult(ctx, battle, layout, t) {
     : won ? battle.guardian ? `${battle.foe.name} became your friend!` : 'The Static drifts away!' : battle.result.outcome === 'lost' ? 'A light will guide you home.' : 'You slip away safely.';
   textBlock(ctx, (battle.recognition ? battle.recognition + ' · ' : '') + title, r.x + 9, r.y + 6, r.w - 18, { font: 'small', color: won ? PAL.ui.gold : PAL.ui.text, maxLines: 2 });
   if (!grade) {
-    textBlock(ctx, battle.mode === 'duel' ? `${battle.duelAccepted}/3 rounds · ${battle.stats.casts} casts. Toy FP32 payload baseline, not a hardware measurement.` : battle.recap, r.x + 9, r.y + 34, r.w - 18, { font: 'small', maxLines: 4, color: PAL.ui.dim });
+    textBlock(ctx, battle.mode === 'duel' ? `${battle.duelAccepted}/3 rounds · ${battle.stats.casts} casts. The FP32 payload baseline is a toy, not a hardware measurement.` : battle.recap, r.x + 9, r.y + 34, r.w - 18, { font: 'small', maxLines: 4, color: PAL.ui.dim });
     return;
   }
   const rowY = r.y + 25;

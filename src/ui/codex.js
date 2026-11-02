@@ -24,7 +24,7 @@ export class Codex {
     ];
     this.section = this.groups[0].length ? 0 : 1; this.entries = this.groups[this.section]; this.selected = 0;
     this.onClose = onClose; this.open_ = true; this.reading = false; this.scroll = 0;
-    this.game.announce('Field Notes. Left and right change section; up and down choose an entry. Enter reads; Escape closes.');
+    this.game.announce('Field Notes are open: left and right change section, up and down choose an entry, Enter reads and Escape closes.');
   }
   close() { this.open_ = false; const done = this.onClose; this.onClose = null; done?.(); }
   update(dt, input) {
@@ -95,7 +95,7 @@ export class Codex {
     } else {
       drawText(ctx, 'Unwritten pages', rx, ry, { color: PAL.ui.gold });
       let y = ry + 20;
-      for (const line of wrapText('Find a Grid Stone to discover a technique. Your notes will keep it here.', rw)) { drawText(ctx, line, rx, y, { color: PAL.ui.dim }); y += 11; }
+      for (const line of wrapText('Find a Grid Stone to discover a technique, and your notes will keep it here.', rw)) { drawText(ctx, line, rx, y, { color: PAL.ui.dim }); y += 11; }
       this.maxScroll = 0;
     }
     drawText(ctx, this.reading ? '↑↓ Scroll   Enter / B Back to index' : '↑↓ Entry   ←→ Section   A / Enter Read', Math.round(w / 2), h - 18, { font: 'small', align: 'center', color: PAL.ui.gold });

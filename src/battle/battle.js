@@ -18,21 +18,21 @@ import { dexEntryOf, originSpecies } from '../content/static-dex.js';
 export const COMMANDS = Object.freeze(['SNAP', 'TUNE', 'GUARD', 'FRIENDS', 'SNACK', 'SCAN']);
 
 const FALLBACK = {
-  intro: 'The Static tangled this spirit. Find a grid that keeps its essence.',
-  firstSnap: 'Watch the values. A tight range clips; a wide range makes big steps.',
-  fizzle: 'Too noisy! Try a better range, more bits, or this spirit’s technique.',
-  clipped: 'Orange motes fell outside the range. They clip to its edges.',
-  perfect: 'Almost no reconstruction error. PERFECT adds a toy damage bonus!',
-  technique: 'TUNE is free. Match the technique to the shape of the essence.',
-  lowBytes: 'Not enough bytes. GUARD recovers 12 B; fewer bits cost less.',
-  guard: 'Press confirm as the rings meet. Gold timing blocks more and returns 2 B.',
-  charge: 'A heavy hit is coming. GUARD braces the next hit and restores bytes.',
+  intro: 'The Static tangled this spirit, so find a grid that keeps its essence.',
+  firstSnap: 'Watch the values, because a tight range clips and a wide range makes big steps.',
+  fizzle: 'That was too noisy, so try a better range, more bits or this spirit’s technique.',
+  clipped: 'Orange motes fell outside the range, so they clip to its edges.',
+  perfect: 'That cast had almost no reconstruction error, and PERFECT adds a toy damage bonus!',
+  technique: 'TUNE is free, so match the technique to the shape of the essence.',
+  lowBytes: 'You are short of bytes, but GUARD recovers 12 B and fewer bits cost less.',
+  guard: 'Press confirm as the rings meet, since gold timing blocks more and returns 2 B.',
+  charge: 'A heavy hit is coming, and GUARD braces for it while restoring bytes.',
   win: 'The Static breaks. A little precision, a new friend.',
 };
 const fmt = value => Number(value.toFixed(3)).toString();
 const cloneLocks = locks => ({ ...locks, ranges: [...(locks.ranges ?? [])], lows: [...(locks.lows ?? [])], highs: [...(locks.highs ?? [])], protected: [...(locks.protected ?? [])] });
 const cloneGear = gear => ({ ...gear, budget: gear.budget ? [...gear.budget] : null });
-const FIRST_GRID = 'White dots are true values; lines are the levels. Red tethers show what the snap lost.';
+const FIRST_GRID = 'White dots are true values and lines are levels, and red tethers show what the snap lost.';
 // Session-only teaching memory, keyed by the save object without mutating it.
 const guardTaught = new WeakSet();
 
@@ -142,8 +142,8 @@ export class Battle {
     }
     if (this.techniqueAvailable) return this.foe.hint ?? TECHNIQUES[this.foe.technique]?.short ?? 'Fit the range before buying extra bits.';
     return this.techniques.includes('bits')
-      ? 'More bits can help until you learn ' + (TECHNIQUES[this.foe.technique]?.name ?? 'the next tool') + '. Fit the range first.'
-      : 'Fit your current 4-bit grid around the motes. A Grid Stone unlocks more tools.';
+      ? 'More bits can help until you learn ' + (TECHNIQUES[this.foe.technique]?.name ?? 'the next tool') + ', but fit the range first.'
+      : 'Fit your current 4-bit grid around the motes until a Grid Stone unlocks more tools.';
   }
 
   get gridModel() {
@@ -185,10 +185,10 @@ export class Battle {
     if (persisted && (this.game.hasFlag?.(persisted) ?? this.game.state.flags?.includes(persisted))) { this.seen.add(key); return false; }
     let line = key === 'gridReading' ? FIRST_GRID : COACH[this.foeId]?.[key] ?? fallback ?? FALLBACK[key];
     if (!this.techniqueAvailable && ['intro', 'technique', 'fizzle', 'phase2', 'thinThread', 'win'].includes(key)) line = this.availableHint;
-    if (!this.techniqueAvailable && key === 'firstSnap') line = 'Follow a true value to its nearest level. Short red tethers mean less error.';
-    if (!this.techniqueAvailable && key === 'clipped') line = 'Orange values escaped the grid. Leave more room when you lock the next range.';
-    if (!this.techniqueAvailable && key === 'perfect') line = 'A clean reconstruction! A faithful snap turns the same bytes into more damage.';
-    if (!this.techniques.includes('bits') && key === 'lowBytes') line = 'Not enough bytes. GUARD recovers 12 B and braces the next hit.';
+    if (!this.techniqueAvailable && key === 'firstSnap') line = 'Follow a true value to its nearest level, where a short red tether means less error.';
+    if (!this.techniqueAvailable && key === 'clipped') line = 'Orange values escaped the grid, so leave more room when you lock the next range.';
+    if (!this.techniqueAvailable && key === 'perfect') line = 'That was a clean reconstruction, and a faithful snap turns the same bytes into more damage.';
+    if (!this.techniques.includes('bits') && key === 'lowBytes') line = 'You are short of bytes, but GUARD recovers 12 B and braces for the next hit.';
     if (this.species && ['intro', 'technique'].includes(key)) line = this.availableHint;
     if (this.mode === 'duel' && ['intro', 'technique'].includes(key)) line = this.availableHint;
     if (this.species && key === 'firstSnap') line = FALLBACK.firstSnap;
@@ -218,7 +218,7 @@ export class Battle {
     this.salience = weights.map((weight, i) => this.essence.inputs?.length ? Math.max(...this.essence.inputs.map(row => Math.abs(row[i] ?? 0))) : Math.abs(weight));
     this.locks = this._defaultLocks();
     this.attack = this.mode === 'well' ? this.well.attack(this.stats.turns, this.bossPhase)
-      : this.mode === 'duel' ? { name: 'Map flap', telegraph: 'Fen unfolds a map flap. Tap when the rings meet.', hits: [this.foe.power], gaps: [0.85], charge: false }
+      : this.mode === 'duel' ? { name: 'Map flap', telegraph: 'Fen unfolds a map flap, so tap when the rings meet.', hits: [this.foe.power], gaps: [0.85], charge: false }
       : attackFor(this.foeId, this.stats.turns, this.bossPhase);
     this.attack = { ...this.attack, hits: this.attack.hits.map(hit => hit + (this.rules.attackBonus ?? 0)), gaps: [...(this.attack.gaps ?? [0.85])] };
     if (this.species && ['campaign', 'practice'].includes(this.mode)) this.attack.telegraph = this.attack.telegraph.replace(FOES[this.foeId].name, this.foe.name);
@@ -231,7 +231,7 @@ export class Battle {
     else if (oldMorph !== this.essence.morphStage && this.essence.morphHint) this._say(this.techniqueAvailable ? this.essence.morphHint : this.availableHint);
     else if (this.charging) { this._sound('charge'); if (!this._coach('charge')) this._say(this.attack.telegraph); }
     else if (this.essence.forecast) this._say(this.essence.forecast + ' · +' + recharge + ' B charge');
-    else this._say('+' + recharge + ' B charge. The essence shifts. Find its new fit.');
+    else this._say('The essence shifts, so find its new fit · +' + recharge + ' B charge');
   }
 
   _defaultLocks() {
@@ -324,7 +324,7 @@ export class Battle {
     if (!this.essence.hidden) this.game.audio?.glide?.(values.map(v => clamp((v - view.min) / (view.max - view.min || 1))), { duration: 0.25 });
     if (this.gear.budget) {
       this.budgetIndex = 0; this._phase('budget');
-      this._say('Spend bits where errors matter. Compare each head and the weighted fidelity preview.');
+      this._say('Spend bits where errors matter by comparing each head with the weighted fidelity preview.');
     }
     else this._startSpecialLocks();
   }
@@ -335,7 +335,7 @@ export class Battle {
       if (this.locks.protected.length >= this.gear.spotlight) return this._startBalance();
       this.pickIndex = 0;
       this._phase('spotlight');
-      this._say('Keep ' + this.gear.spotlight + ' weights exactly. Hot inputs amplify their errors. +3 B each.');
+      this._say('Keep ' + this.gear.spotlight + ' weights exact at +3 B each, because hot inputs amplify their errors.');
       this._coach('hot');
     } else this._startBalance();
   }
@@ -345,7 +345,7 @@ export class Battle {
       this.breathAge = 0;
       this.locks.alpha = 0.5;
       this._phase('balance');
-      this._say('A shrinks; W grows; raw A×W stays the same. Lock alpha, then compare rounded products.');
+      this._say('A shrinks and W grows while raw A×W stays the same, so lock alpha and compare rounded products.');
     } else this._startRangeLocks();
   }
 
@@ -367,7 +367,7 @@ export class Battle {
     if (!this.lockSteps.length) return this._commitCast();
     if (!this.seen.has('gridReading')) this._say(FIRST_GRID);
     else if (this.essence.hidden) this._say((this.essence.forecast ?? 'The live wave is hidden.') + ' Both archives stay on the same ruler.');
-    else this._say('Lock the breathing grid. Hold steady to slow it; go back to retune.');
+    else this._say('Lock the breathing grid, holding steady to slow it or going back to retune.');
   }
 
   _breatheAt(elapsed) {

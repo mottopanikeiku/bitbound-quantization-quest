@@ -2,7 +2,7 @@
 
 # Bitbound
 
-A pixel-art RPG about quantization that you can [play in the browser](https://mottopanikeiku.github.io/bitbound-quantization-quest/) with a keyboard or a phone. Each spell is a grid. You pick a bit width and a range, lock it, and the enemy's numbers snap to the nearest levels; the closer they land to where they started, the harder the spell hits.
+Bitbound is a pixel-art RPG about quantization that you can [play in the browser](https://mottopanikeiku.github.io/bitbound-quantization-quest/) with a keyboard or a phone. Every spell is a grid: you pick a bit width and a range and lock it, the enemy's numbers snap to the nearest levels, and the closer they land to where they started, the harder the spell hits.
 
 ![Locking a 4-bit grid in a battle against Nib, the first guardian](assets/battle.gif)
 
@@ -22,13 +22,13 @@ Seven guardians each teach one technique through a battle and a bridge puzzle.
 | Vesper | Balance | SmoothQuant-style rescaling moves range between activations and weights |
 | Auric | Bit Budget | Mixed precision spends more bits on sensitive heads |
 
-Befriending them brings the island's colours back. After two friends you can drop into the Static Well, a seeded dungeon with a warden every fifth floor. There are also 21 staticling species to collect, rival duels against Fen Float and a Journal that keeps track of it all.
+Befriending them brings the island's colours back, and once you have two friends you can drop into the Static Well, a seeded dungeon with a warden every fifth floor. There are also 21 staticling species to collect, rival duels against Fen Float and a Journal that keeps track of it all.
 
-The tensors are small hand-made examples, not weights from a real model. Formulas, packet layout and paper links are in [RESEARCH.md](RESEARCH.md).
+The tensors are small hand-made examples rather than weights from a real model, and the formulas, packet layout and paper links are in [RESEARCH.md](RESEARCH.md).
 
 ## Development
 
-Node 22.12 or newer:
+You need Node 22.12 or newer to run it locally:
 
 ```sh
 npm ci
@@ -37,6 +37,6 @@ npm run dev
 
 `npm test` runs the game-logic tests and `npm run build` makes the production bundle. In dev, `?battle=nib` drops you straight into the first fight.
 
-WASD or arrows to move, Enter or Space to confirm, Shift to run, J for the Journal, M for music. Phones get an on-screen pad. Saves stay in the browser.
+You move with WASD or the arrows, confirm with Enter or Space, run with Shift, open the Journal with J and toggle music with M. Phones get an on-screen pad instead, and saves stay in the browser.
 
-It is plain JavaScript, Canvas and Web Audio. The sprites, tiles, pixel font and music are all generated in code. [MIT licensed](LICENSE).
+The game is plain JavaScript, Canvas and Web Audio, its sprites, tiles, pixel font and music are all generated in code, and it is [MIT licensed](LICENSE).

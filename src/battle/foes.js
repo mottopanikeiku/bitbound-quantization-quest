@@ -15,11 +15,11 @@ const INTROS = [
   'Auric has three heads, but their errors do not matter equally.',
 ];
 const HINTS = [
-  'Try 4 bits and cover the wave. 2 bits are rough; 8 bits cost more.',
-  'Try Zero-Shift at 4 bits. Sixteen one-sided levels fit the bell without wasting half a mirrored ruler.',
-  'The archive has calm and storm samples. Use a tight calm range, wide before a storm.',
+  'Try 4 bits and cover the wave, since 2 bits are rough and 8 bits cost more.',
+  'Try Zero-Shift at 4 bits, where sixteen one-sided levels fit the bell without wasting half a mirrored ruler.',
+  'The archive has calm and storm samples, so use a tight range for calm and a wide one before a storm.',
   'Try Group Rulers at 3 bits. After two good casts, extra bends need 4 bits and fresh rulers.',
-  'Spotlight the two largest input channels, then try 2-bit weights. Watch output fidelity.',
+  'Spotlight the two largest input channels, then try 2-bit weights while watching output fidelity.',
   'Try 2 bits and Balance near alpha 0.5. When unequal products appear, retune to 3 bits.',
   'Try head bits 8 / 2 / 2; in phase two the middle head needs 3. Sensitivities are 3 / 1 / 0.4.',
 ];
@@ -112,7 +112,7 @@ export function createEssence(foeId, turn = 0, random = () => 0.5, phase = 1, { 
       ...base,
       hidden: true,
       storm,
-      forecast: storm ? 'Storm next: tails around +/-2.1. Choose a wide range.' : 'Calm next: tails around +/-0.49. Choose a tight range.',
+      forecast: storm ? 'Storm next, with tails around +/-2.1, so choose a wide range.' : 'Calm next, with tails around +/-0.49, so choose a tight range.',
       ghosts: [...calmSample, ...stormSample],
       archive: { calm: calmSample, storm: stormSample },
       rows: [{ label: storm ? 'Hidden storm' : 'Hidden calm', values: rotateScale(storm ? STORM_LIVE : CALM_LIVE, shift, amplitude / 7) }],
@@ -124,7 +124,7 @@ export function createEssence(foeId, turn = 0, random = () => 0.5, phase = 1, { 
     return {
       ...base,
       morphName: morphed ? 'Extra bends' : 'Three simple threads',
-      morphHint: morphed ? 'New bends do not fit the old 3-bit steps. Try 4 bits with Group Rulers.' : '',
+      morphHint: morphed ? 'New bends do not fit the old 3-bit steps, so try 4 bits with Group Rulers.' : '',
       independentThreads: true,
       rows: magnitudes.map((magnitude, i) => ({
         label: ['Rope', 'Silk', 'Whisper'][i],
@@ -150,7 +150,7 @@ export function createEssence(foeId, turn = 0, random = () => 0.5, phase = 1, { 
     return {
       ...base, inputs, weights, quantizeInputs: false, hotChannels: hot,
       morphName: morphed ? 'Split heat' : 'Paired heat',
-      morphHint: morphed ? 'The hot inputs split apart and their heights change. Choose by input heat, not weight size.' : '',
+      morphHint: morphed ? 'The hot inputs split apart and their heights change, so choose by input heat, not weight size.' : '',
       rows: [{ label: 'Kiln weights', values: weights }],
     };
   }
@@ -174,7 +174,7 @@ export function createEssence(foeId, turn = 0, random = () => 0.5, phase = 1, { 
       quantizeInputs: true,
       hotChannels: [hot],
       morphName: morphed ? 'Unequal products' : 'Opposing outliers',
-      morphHint: morphed ? 'The balanced products now have three magnitudes. Keep Balance, but try 3 bits.' : '',
+      morphHint: morphed ? 'The balanced products now have three magnitudes, so keep Balance but try 3 bits.' : '',
       rows: [
         ...inputs.map((values, i) => ({ label: `Token ${i + 1}: A`, values })),
         { label: 'Library W', values: weights },
@@ -185,7 +185,7 @@ export function createEssence(foeId, turn = 0, random = () => 0.5, phase = 1, { 
   return {
     ...base,
     morphName: second ? 'The wing unfolds' : 'Fine crown',
-    morphHint: second ? 'The wing has extra levels now. Keep 8 crown bits and raise the wing to 3.' : '',
+    morphHint: second ? 'The wing has extra levels now, so keep 8 crown bits and raise the wing to 3.' : '',
     sensitivities: [3, 1, 0.4],
     rows: [
       { label: 'Crown x3', values: rotateScale(second ? LOPSIDED_HEAD : PRECISE_HEAD, shift, (second ? 1.7 : 1) * drift / 127) },
@@ -207,23 +207,23 @@ export function attackFor(foeId, turn = 0, phase = 1) {
     'The three threads slip past one another.',
     'Two different kiln channels glow hot.',
     'The outlier slips into another channel.',
-    phase >= 2 ? 'The middle head grows a new tail. Revisit its bits.' : 'The crown head shifts its fine detail.',
+    phase >= 2 ? 'The middle head grows a new tail, so revisit its bits.' : 'The crown head shifts its fine detail.',
   ][foe.zone];
   if (beat === 1) {
-    return { name: 'Static charge', telegraph: `${foe.name} draws in a heavy charge. GUARD can brace it!`, hits: [power * 2 + 2], gaps: [0.85], charge: true, morph };
+    return { name: 'Static charge', telegraph: `${foe.name} draws in a heavy charge, but GUARD can brace it!`, hits: [power * 2 + 2], gaps: [0.85], charge: true, morph };
   }
   if (beat === 2 || beat === 3) {
     const triple = foe.guardian && foe.zone >= 3 && beat === 3;
     return {
       name: triple ? 'Three-beat ripple' : 'Echo taps',
-      telegraph: triple ? 'Three rings: tap, quick tap, then wait for the third.' : 'Two rings are coming. Guard each beat separately.',
+      telegraph: triple ? 'Three rings: tap, quick tap, then wait for the third.' : 'Two rings are coming, so guard each beat separately.',
       hits: triple ? [power, Math.max(1, power - 1), power] : [power, Math.max(1, power - 1)],
       gaps: triple ? [0.85, 0.45, 0.7] : [0.85, 0.55],
       charge: false,
       morph,
     };
   }
-  return { name: 'Static nudge', telegraph: `${foe.name} winds up. Confirm when the ring meets the mark.`, hits: [power + 1], gaps: [0.85], charge: false, morph };
+  return { name: 'Static nudge', telegraph: `${foe.name} winds up, so confirm when the ring meets the mark.`, hits: [power + 1], gaps: [0.85], charge: false, morph };
 }
 
 /** Public, deterministic teaching fixtures; these do not change the spell's math. */

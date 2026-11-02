@@ -17,7 +17,7 @@ export const LESSONS = {
     formula: 's = r/(2^(b-1)-1); rebuilt = s × q',
     real: 'GPTQ compresses trained LLM weights to 3 or 4 bits using error compensation, not just rounding.',
     recap: 'Fit the range, then buy enough levels without emptying your byte purse.',
-    diagramCaption: '4-bit mirror grid: -7 to 7, with -8 unused.',
+    diagramCaption: 'The 4-bit mirror grid runs from -7 to 7 and leaves -8 unused.',
   },
   zero: {
     id: 'zero',
@@ -65,7 +65,7 @@ export const LESSONS = {
     formula: 'Symmetric packet B = ceil(N × b/8) + 2 × groups',
     real: "AWQ's weight-only INT4 experiments use groups of 128 weights. Real formats also store scales and may store zero-points.",
     recap: 'Separate rulers preserve small threads, but their scales also take space.',
-    diagramCaption: 'Same bits, three ranges: the thin thread gets levels too.',
+    diagramCaption: 'With the same bits and three ranges, the thin thread gets levels too.',
   },
   spotlight: {
     id: 'spotlight',
@@ -113,7 +113,7 @@ export const LESSONS = {
     formula: 'F = clamp(1 - relative error, 0, 1)',
     real: 'LLM.int8() uses 16-bit math for outlier feature dimensions and 8-bit math for the rest. This is a real mixed-precision plan, not the same recipe as our three heads.',
     recap: 'Spend precision where errors matter most instead of giving every head the same bits.',
-    diagramCaption: 'Different bits per head, one total packet cost.',
+    diagramCaption: 'Each head gets different bits within one total packet cost.',
   },
 };
 
@@ -132,7 +132,7 @@ export const GLOSSARY = [
   },
   {
     term: 'Range',
-    text: 'The interval from the lowest to the highest reconstruction level. Widening it at the same bit count spreads levels farther apart.',
+    text: 'The range is the interval from the lowest to the highest reconstruction level, and widening it at the same bit count spreads levels farther apart.',
   },
   {
     term: 'Rounding error',
@@ -144,7 +144,7 @@ export const GLOSSARY = [
   },
   {
     term: 'Zero-point',
-    text: 'The integer code z that rebuilds to real zero. Here z is clamp(roundEven(-lo/s), 0, 2^b-1), after extending lo and hi to include zero.',
+    text: 'The zero-point is the integer code z that rebuilds to real zero. Here z is clamp(roundEven(-lo/s), 0, 2^b-1), after extending lo and hi to include zero.',
   },
   {
     term: 'Symmetric vs affine',
@@ -168,7 +168,7 @@ export const GLOSSARY = [
   },
   {
     term: 'Salient weight',
-    text: 'A weight whose quantization error matters strongly to a model output. Large inputs can magnify a small weight error, so looking only for large weights misses the point.',
+    text: 'A salient weight is one whose quantization error matters strongly to a model output. Large inputs can magnify a small weight error, so looking only for large weights misses the point.',
   },
   {
     term: 'Weight & activation',
@@ -351,7 +351,7 @@ export const COACH = {
   nib: {
     ...combatBasics,
     intro: '*TUNE* to 4 bits, choose *SNAP*, then lock when the bracket fits the leaf motes.',
-    firstSnap: 'White dots are true values; lines are the levels. Red tethers show what the snap lost.',
+    firstSnap: 'White dots are true values and lines are levels, and red tethers show what the snap lost.',
     fizzle: 'Too few levels or a loose range: try 4 bits and lock near the outer motes.',
     clipped: 'Motes hit the ends: lock a wider range, but watch the gaps between levels.',
     perfect: 'PERFECT means at least 98.5% fidelity, not lossless; extra bits may not buy more damage.',
@@ -435,7 +435,7 @@ export const COACH = {
     ...combatBasics,
     lowBytes: 'Choose GUARD for +12 B; once Bit Dial is learned, TUNE can lower the bit cost.',
     intro: 'Choose SNAP, then lock the 4-bit bracket around the motes, not empty space.',
-    firstSnap: 'White dots are true values; lines are the levels. Red tethers show what the snap lost.',
+    firstSnap: 'White dots are true values and lines are levels, and red tethers show what the snap lost.',
     fizzle: 'Lock closer to the outer motes; once Bit Dial is learned, TUNE can compare bit counts.',
     clipped: 'A mote is outside the grid; widen the lock until its end level can reach it.',
     perfect: 'Clean practice snap! Keep fitting the range; finer steps are useful, but not free.',
