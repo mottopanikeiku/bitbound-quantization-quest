@@ -1,70 +1,42 @@
+<p align="center"><a href="https://mottopanikeiku.github.io/bitbound-quantization-quest/"><img alt="The Bitbound title screen over the lighthouse island at dusk" src="assets/title.webp" width="720"></a></p>
+
 # Bitbound
 
-A pixel-art RPG about quantization for inference. Each spell rounds the values on screen; its damage depends on the reconstruction error, and its cost depends on the bytes it uses.
+A pixel-art RPG about quantization that you can [play in the browser](https://mottopanikeiku.github.io/bitbound-quantization-quest/) with a keyboard or a phone. Each spell is a grid. You pick a bit width and a range, lock it, and the enemy's numbers snap to the nearest levels; the closer they land to where they started, the harder the spell hits.
 
-<p>
-<a href="https://mottopanikeiku.github.io/bitbound-quantization-quest/"><img alt="Bitbound's title screen over the lighthouse island at dusk" src="docs/title.webp" width="49%"></a>
-<a href="https://mottopanikeiku.github.io/bitbound-quantization-quest/"><img alt="Exploring Lighthouse Point, the first village" src="docs/island.webp" width="49%"></a>
-</p>
+![Locking a 4-bit grid in a battle against Nib, the first guardian](assets/battle.gif)
 
-**[Play in your browser](https://mottopanikeiku.github.io/bitbound-quantization-quest/)**. Keyboard and touch controls. Saves stay in your browser; no account or download.
+White dots are the true values, red tethers show the rounding error and orange dots got clipped. Every cast costs bytes, so the byte budget is your mana bar: more bits make a better spell and leave less for the next turn. Between casts you can time a guard against the enemy's attack, brace to win bytes back, or use TUNE and SCAN (both free) to look at what went wrong.
 
-## What you learn
+## The island
 
-Seven island regions each teach a technique through a guardian battle and a bridge puzzle. You choose the bit width, fit a range around the values, then watch them snap to the nearest level. Red tethers show rounding error; orange values show clipping.
+Seven guardians each teach one technique through a battle and a bridge puzzle.
 
-| Guardian | Technique | Quantization concept |
+| Guardian | Technique | What it teaches |
 | --- | --- | --- |
-| Nib | Bit Dial | Bit width sets the number of levels; range trades rounding error against clipping |
-| Chime | Zero-Shift | An affine grid uses a zero-point to fit mostly-positive values |
-| Brine | Tide Gauge | Calibration uses sample data to choose a range for inputs you have not seen yet |
-| Spindle | Group Rulers | Per-channel and group-wise scales preserve small values beside large ones |
-| Cinder | Spotlight | Weights paired with large inputs contribute more to output error |
-| Vesper | Balance | SmoothQuant-style rescaling moves range between activations and weights before rounding |
+| Nib | Bit Dial | Bit width sets the number of levels, and the range trades rounding against clipping |
+| Chime | Zero-Shift | A zero-point lets an affine grid fit mostly-positive values |
+| Brine | Tide Gauge | Calibrate a range on sample data, then face inputs you haven't seen |
+| Spindle | Group Rulers | Separate scales keep small values alive next to large ones |
+| Cinder | Spotlight | Weights paired with big inputs matter more |
+| Vesper | Balance | SmoothQuant-style rescaling moves range between activations and weights |
 | Auric | Bit Budget | Mixed precision spends more bits on sensitive heads |
 
-More bits make a cast expensive. A smaller packet leaves you more bytes for the next turn. TUNE and SCAN are free, so you can inspect the last cast and change your approach. Between casts, time a guard against the enemy's attack or brace to recover bytes.
+Befriending them brings the island's colours back. After two friends you can drop into the Static Well, a seeded dungeon with a warden every fifth floor. There are also 21 staticling species to collect, rival duels against Fen Float and a Journal that keeps track of it all.
 
-The arithmetic uses small example tensors and JavaScript numbers. Fidelity measures reconstruction error; HP, damage and grades are game rules. The game illustrates inference concepts without running a model or measuring hardware performance. [Quantization notes](RESEARCH.md) explain the formulas, packet layout and links to the papers.
+The tensors are small hand-made examples, not weights from a real model. Formulas, packet layout and paper links are in [RESEARCH.md](RESEARCH.md).
 
-## Around the island
+## Development
 
-Befriend the seven guardians to restore the island's colours and call on their techniques in later fights. There are 21 staticling species, shrine rematches and three packet-budget duels against Fen Float. Battle grades reward fidelity, small packets, guard timing and fewer turns.
-
-The Island Journal tracks the map, species, 20 badges and your battle records. Rest at camps to open fast travel, solve the seven bridges and collect shards to expand your byte supply.
-
-After making two friends, enter the Static Well at Lighthouse Point. It generates battles from a replayable seed, with a warden every fifth floor and a choice of boons between some floors. Runs use separate supplies and can be suspended between fights. Hats and golden creatures are cosmetic.
-
-## Controls
-
-| Keyboard | Action |
-| --- | --- |
-| WASD / arrows | Walk or choose a menu item |
-| Enter / Space / E | Talk, confirm, lock a grid or time a guard |
-| Shift | Run; slow the moving bracket while locking a grid |
-| Esc / P | Pause; Esc also goes back |
-| J / N | Island Journal / Field Notes |
-| M / F | Toggle music / full screen |
-
-On phones, use the D-pad, **A** to act, **B** to go back and **START** to pause. Hold **STEADY** to run or slow a grid lock. Starting the game enables music and requests full screen; F or the pause menu changes it. To flee a fight, use the pause menu.
-
-## Run locally
-
-Requires Node.js 22.12 or newer.
+Node 22.12 or newer:
 
 ```sh
 npm ci
 npm run dev
 ```
 
-Open the local URL printed by Vite. To test and serve the production build:
+`npm test` runs the game-logic tests and `npm run build` makes the production bundle. In dev, `?battle=nib` drops you straight into the first fight.
 
-```sh
-npm test
-npm run build
-npm run preview
-```
+WASD or arrows to move, Enter or Space to confirm, Shift to run, J for the Journal, M for music. Phones get an on-screen pad. Saves stay in the browser.
 
-The tests cover quantization arithmetic, battle rules, saves, progress, Well runs, world navigation and lesson layouts. GitHub Actions runs the tests and deploys `main` to Pages. The build writes to `dist/`.
-
-The game uses plain JavaScript, Canvas and Web Audio. Sprites, tiles, the pixel font and music are generated in code. [MIT licensed](LICENSE).
+It is plain JavaScript, Canvas and Web Audio. The sprites, tiles, pixel font and music are all generated in code. [MIT licensed](LICENSE).
